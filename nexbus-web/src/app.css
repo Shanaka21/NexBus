@@ -1,0 +1,28 @@
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: #f0f2f5;
+  color: #1a1a4e;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.01em;
+}
+
+:root {
+  --blue: #1a3cff;
+  --navy: #1a1a4e;
+  --light-blue: #f0f4ff;
+  --green: #4caf50;
+  --orange: #ff9800;
+  --red: #f44336;
+  --gray: #888;
+  --border: #eee;
+  --white: #ffffff;
+}
