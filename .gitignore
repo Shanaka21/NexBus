@@ -1,3 +1,10 @@
+# Secrets and tools
+secrets.txt
+git-filter-repo
+nexbus-7f898-firebase-adminsdk-fbsvc-0378ed7a07.json
+**/nexbus-7f898-firebase-adminsdk-fbsvc-0378ed7a07.json
+
+
 # Dependencies
 node_modules/
 

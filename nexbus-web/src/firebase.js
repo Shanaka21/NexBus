@@ -3,7 +3,7 @@ import { getFirestore } from 'firebase/firestore';
 import { getDatabase } from 'firebase/database';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyCmH1-ZWzNmRhbeDA6inllnnEp7ShbDG_8",
+  apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
   authDomain: "nexbus-7f898.firebaseapp.com",
   projectId: "nexbus-7f898",
   storageBucket: "nexbus-7f898.firebasestorage.app",
