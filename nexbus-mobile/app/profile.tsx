@@ -1,25 +1,47 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  StatusBar, ScrollView,
+  StatusBar, ScrollView, TextInput, Alert, ActivityIndicator, Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { Stack, useRouter } from "expo-router";
+import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { getUserId, getUserName, getUserEmail } from "./userSession";
+import * as ImagePicker from "expo-image-picker";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getUserId, getUserName, getUserEmail, setUserName } from "./userSession";
 import { API_URL } from "./config";
+
+const AVATAR_KEY = "nexbus_avatar_uri";
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const name  = getUserName()  || "Guest User";
+  const uid   = getUserId();
   const email = getUserEmail() || "—";
-  const initials = name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2) || "U";
+  const [displayName, setDisplayName] = useState(getUserName() || "Guest User");
+  const initials = displayName.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2) || "U";
 
-  const [stats, setStats] = useState({ total: 0, confirmed: 0, completed: 0, cancelled: 0 });
+  const [avatarUri, setAvatarUri] = useState<string | null>(null);
+  const [stats, setStats]   = useState({ total: 0, confirmed: 0, completed: 0, cancelled: 0 });
+  const [profile, setProfile] = useState({ phone: "", region: "Sri Lanka", role: "passenger" });
+
+  const [editing, setEditing]     = useState(false);
+  const [editName, setEditName]   = useState(displayName);
+  const [editPhone, setEditPhone] = useState("");
+  const [editRegion, setEditRegion] = useState("Sri Lanka");
+  const [saving, setSaving]       = useState(false);
+
+  // Load saved avatar
+  useFocusEffect(
+    useCallback(() => {
+      AsyncStorage.getItem(AVATAR_KEY).then((uri) => {
+        if (uri) setAvatarUri(uri);
+      });
+    }, [])
+  );
 
   useEffect(() => {
-    const uid = getUserId();
     if (!uid) return;
+
     fetch(`${API_URL}/bookings?user_id=${uid}`)
       .then((r) => r.json())
       .then((data) => {
@@ -32,7 +54,104 @@ export default function ProfileScreen() {
         });
       })
       .catch(() => {});
+
+    fetch(`${API_URL}/auth/${uid}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.uid) {
+          const p = {
+            phone:  data.phone  || "",
+            region: data.region || "Sri Lanka",
+            role:   data.role   || "passenger",
+          };
+          setProfile(p);
+          setEditPhone(p.phone);
+          setEditRegion(p.region);
+        }
+      })
+      .catch(() => {});
   }, []);
+
+  const roleLabel = profile.role === "operator" ? "Bus Operator" : "Passenger";
+
+  const pickAvatar = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permission Required", "Allow photo access to set a profile picture.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+    if (!result.canceled && result.assets[0]?.uri) {
+      const uri = result.assets[0].uri;
+      setAvatarUri(uri);
+      await AsyncStorage.setItem(AVATAR_KEY, uri);
+    }
+  };
+
+  const takePhoto = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permission Required", "Allow camera access to take a profile photo.");
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.7,
+    });
+    if (!result.canceled && result.assets[0]?.uri) {
+      const uri = result.assets[0].uri;
+      setAvatarUri(uri);
+      await AsyncStorage.setItem(AVATAR_KEY, uri);
+    }
+  };
+
+  const showAvatarOptions = () => {
+    Alert.alert("Profile Photo", "Choose an option", [
+      { text: "Take Photo",          onPress: takePhoto },
+      { text: "Choose from Library", onPress: pickAvatar },
+      ...(avatarUri ? [{ text: "Remove Photo", style: "destructive" as const, onPress: async () => { setAvatarUri(null); await AsyncStorage.removeItem(AVATAR_KEY); } }] : []),
+      { text: "Cancel", style: "cancel" },
+    ]);
+  };
+
+  const handleSave = async () => {
+    if (!uid) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`${API_URL}/auth/${uid}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: editName, phone: editPhone, region: editRegion }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setProfile((prev) => ({ ...prev, phone: editPhone, region: editRegion }));
+        setDisplayName(editName);
+        setUserName(editName);
+        setEditing(false);
+        Alert.alert("Saved", "Your profile has been updated.");
+      } else {
+        Alert.alert("Error", data.error || "Failed to save. Try again.");
+      }
+    } catch {
+      Alert.alert("Error", "Network error. Check your connection.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setEditName(displayName);
+    setEditPhone(profile.phone);
+    setEditRegion(profile.region);
+    setEditing(false);
+  };
 
   return (
     <View style={styles.container}>
@@ -40,25 +159,38 @@ export default function ProfileScreen() {
       <StatusBar barStyle="light-content" />
 
       <LinearGradient colors={["#4f86f7", "#1a3cff", "#0d1b6e"]} style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>My Profile</Text>
-        <View style={{ width: 24 }} />
+        <TouchableOpacity onPress={() => setEditing(!editing)}>
+          <Ionicons name={editing ? "close-outline" : "pencil-outline"} size={22} color="#fff" />
+        </TouchableOpacity>
       </LinearGradient>
 
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
 
         {/* Avatar Card */}
         <View style={styles.avatarCard}>
-          <View style={styles.avatarCircle}>
-            <Text style={styles.avatarInitials}>{initials}</Text>
-          </View>
-          <Text style={styles.name}>{name}</Text>
+          <TouchableOpacity style={styles.avatarWrapper} onPress={showAvatarOptions} activeOpacity={0.85}>
+            {avatarUri ? (
+              <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
+            ) : (
+              <View style={styles.avatarCircle}>
+                <Text style={styles.avatarInitials}>{initials}</Text>
+              </View>
+            )}
+            {/* Camera badge */}
+            <View style={styles.cameraBadge}>
+              <Ionicons name="camera" size={14} color="#fff" />
+            </View>
+          </TouchableOpacity>
+
+          <Text style={styles.name}>{displayName}</Text>
           <Text style={styles.emailText}>{email}</Text>
           <View style={styles.roleBadge}>
             <Ionicons name="shield-checkmark-outline" size={12} color="#1a3cff" />
-            <Text style={styles.roleText}>Verified Passenger</Text>
+            <Text style={styles.roleText}>Verified {roleLabel}</Text>
           </View>
         </View>
 
@@ -89,49 +221,102 @@ export default function ProfileScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Account Details</Text>
 
-          {[
-            { icon: "person-outline",   label: "Full Name",     value: name },
-            { icon: "mail-outline",     label: "Email Address", value: email },
-            { icon: "bus-outline",      label: "Account Type",  value: "Passenger" },
-            { icon: "location-outline", label: "Region",        value: "Sri Lanka" },
-          ].map((item) => (
-            <View key={item.label} style={styles.detailRow}>
-              <View style={styles.detailIcon}>
-                <Ionicons name={item.icon as any} size={18} color="#1a3cff" />
-              </View>
-              <View style={styles.detailContent}>
-                <Text style={styles.detailLabel}>{item.label}</Text>
-                <Text style={styles.detailValue}>{item.value}</Text>
-              </View>
+          <DetailRow icon="mail-outline"    label="Email Address" value={email} />
+          <DetailRow icon="bus-outline"     label="Account Type"  value={roleLabel} />
+
+          {/* Editable: Full Name */}
+          <View style={styles.detailRow}>
+            <View style={styles.detailIcon}>
+              <Ionicons name="person-outline" size={18} color="#1a3cff" />
             </View>
-          ))}
+            <View style={styles.detailContent}>
+              <Text style={styles.detailLabel}>Full Name</Text>
+              {editing ? (
+                <TextInput style={styles.detailInput} value={editName} onChangeText={setEditName} placeholder="Enter full name" placeholderTextColor="#ccc" />
+              ) : (
+                <Text style={styles.detailValue}>{displayName}</Text>
+              )}
+            </View>
+          </View>
+
+          {/* Editable: Phone */}
+          <View style={styles.detailRow}>
+            <View style={styles.detailIcon}>
+              <Ionicons name="call-outline" size={18} color="#1a3cff" />
+            </View>
+            <View style={styles.detailContent}>
+              <Text style={styles.detailLabel}>Phone Number</Text>
+              {editing ? (
+                <TextInput style={styles.detailInput} value={editPhone} onChangeText={setEditPhone} placeholder="+94 7X XXX XXXX" placeholderTextColor="#ccc" keyboardType="phone-pad" />
+              ) : (
+                <Text style={styles.detailValue}>{profile.phone || "—"}</Text>
+              )}
+            </View>
+          </View>
+
+          {/* Editable: Region */}
+          <View style={[styles.detailRow, { borderBottomWidth: 0 }]}>
+            <View style={styles.detailIcon}>
+              <Ionicons name="location-outline" size={18} color="#1a3cff" />
+            </View>
+            <View style={styles.detailContent}>
+              <Text style={styles.detailLabel}>Region</Text>
+              {editing ? (
+                <TextInput style={styles.detailInput} value={editRegion} onChangeText={setEditRegion} placeholder="e.g. Colombo" placeholderTextColor="#ccc" />
+              ) : (
+                <Text style={styles.detailValue}>{profile.region || "—"}</Text>
+              )}
+            </View>
+          </View>
         </View>
 
-        {/* Actions */}
-        <TouchableOpacity
-          style={styles.primaryBtn}
-          onPress={() => router.push("/newbooking" as any)}
-        >
-          <LinearGradient
-            colors={["#4f86f7", "#1a3cff", "#0d1b6e"]}
-            style={styles.primaryBtnGradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-          >
-            <Ionicons name="ticket-outline" size={18} color="#fff" />
-            <Text style={styles.primaryBtnText}>Book a Ride</Text>
-          </LinearGradient>
-        </TouchableOpacity>
+        {/* Save / Cancel */}
+        {editing && (
+          <View style={styles.editActions}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={handleCancel}>
+              <Text style={styles.cancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving}>
+              <LinearGradient colors={["#4f86f7", "#1a3cff", "#0d1b6e"]} style={styles.saveBtnGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                {saving
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={styles.saveBtnText}>Save Changes</Text>}
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        )}
 
-        <TouchableOpacity
-          style={styles.secondaryBtn}
-          onPress={() => router.push("/bookings")}
-        >
-          <Ionicons name="time-outline" size={18} color="#1a3cff" />
-          <Text style={styles.secondaryBtnText}>View Trip History</Text>
-        </TouchableOpacity>
+        {!editing && (
+          <>
+            <TouchableOpacity style={styles.primaryBtn} onPress={() => router.push("/newbooking" as any)}>
+              <LinearGradient colors={["#4f86f7", "#1a3cff", "#0d1b6e"]} style={styles.primaryBtnGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                <Ionicons name="ticket-outline" size={18} color="#fff" />
+                <Text style={styles.primaryBtnText}>Book a Ride</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.push("/bookings")}>
+              <Ionicons name="time-outline" size={18} color="#1a3cff" />
+              <Text style={styles.secondaryBtnText}>View Trip History</Text>
+            </TouchableOpacity>
+          </>
+        )}
 
       </ScrollView>
+    </View>
+  );
+}
+
+function DetailRow({ icon, label, value }: { icon: string; label: string; value: string }) {
+  return (
+    <View style={styles.detailRow}>
+      <View style={styles.detailIcon}>
+        <Ionicons name={icon as any} size={18} color="#1a3cff" />
+      </View>
+      <View style={styles.detailContent}>
+        <Text style={styles.detailLabel}>{label}</Text>
+        <Text style={styles.detailValue}>{value}</Text>
+      </View>
     </View>
   );
 }
@@ -142,7 +327,6 @@ const styles = StyleSheet.create({
     flexDirection: "row", justifyContent: "space-between", alignItems: "center",
     paddingHorizontal: 20, paddingTop: 54, paddingBottom: 20,
   },
-  backBtn: {},
   headerTitle: { fontSize: 20, fontWeight: "bold", color: "#fff" },
   scroll: { padding: 20, paddingBottom: 40 },
 
@@ -152,19 +336,30 @@ const styles = StyleSheet.create({
     shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
   },
+  avatarWrapper: {
+    position: "relative", marginBottom: 14,
+  },
+  avatarImage: {
+    width: 88, height: 88, borderRadius: 44,
+    borderWidth: 3, borderColor: "#1a3cff",
+  },
   avatarCircle: {
     width: 88, height: 88, borderRadius: 44,
-    backgroundColor: "#f0f4ff", alignItems: "center",
-    justifyContent: "center", marginBottom: 14,
+    backgroundColor: "#f0f4ff", alignItems: "center", justifyContent: "center",
     borderWidth: 3, borderColor: "#1a3cff",
   },
   avatarInitials: { fontSize: 32, fontWeight: "bold", color: "#1a3cff" },
+  cameraBadge: {
+    position: "absolute", bottom: 0, right: 0,
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: "#1a3cff", borderWidth: 2, borderColor: "#fff",
+    alignItems: "center", justifyContent: "center",
+  },
   name:      { fontSize: 20, fontWeight: "bold", color: "#1a1a4e", marginBottom: 4 },
   emailText: { fontSize: 14, color: "#888", marginBottom: 10 },
   roleBadge: {
     flexDirection: "row", alignItems: "center", gap: 6,
-    backgroundColor: "#f0f4ff", paddingHorizontal: 14,
-    paddingVertical: 5, borderRadius: 20,
+    backgroundColor: "#f0f4ff", paddingHorizontal: 14, paddingVertical: 5, borderRadius: 20,
   },
   roleText: { fontSize: 12, color: "#1a3cff", fontWeight: "600" },
 
@@ -180,8 +375,7 @@ const styles = StyleSheet.create({
   statLabel:   { fontSize: 11, color: "#888", marginTop: 2 },
 
   section: {
-    backgroundColor: "#fff", borderRadius: 16, padding: 16,
-    marginBottom: 16,
+    backgroundColor: "#fff", borderRadius: 16, padding: 16, marginBottom: 16,
     shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
   },
@@ -197,6 +391,25 @@ const styles = StyleSheet.create({
   detailContent: { flex: 1 },
   detailLabel:   { fontSize: 12, color: "#aaa", marginBottom: 2 },
   detailValue:   { fontSize: 15, color: "#1a1a4e", fontWeight: "500" },
+  detailInput: {
+    fontSize: 15, color: "#1a1a4e", fontWeight: "500",
+    borderBottomWidth: 1.5, borderBottomColor: "#1a3cff",
+    paddingBottom: 2, paddingTop: 2,
+  },
+
+  editActions: { flexDirection: "row", gap: 12, marginBottom: 16 },
+  cancelBtn: {
+    flex: 1, borderRadius: 14, paddingVertical: 16,
+    backgroundColor: "#fff", alignItems: "center",
+    borderWidth: 1, borderColor: "#d0d8ff",
+  },
+  cancelBtnText: { color: "#1a3cff", fontSize: 15, fontWeight: "600" },
+  saveBtn: { flex: 2, borderRadius: 14 },
+  saveBtnGradient: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    paddingVertical: 16, borderRadius: 14,
+  },
+  saveBtnText: { color: "#fff", fontSize: 15, fontWeight: "bold" },
 
   primaryBtn: { borderRadius: 14, marginBottom: 10 },
   primaryBtnGradient: {

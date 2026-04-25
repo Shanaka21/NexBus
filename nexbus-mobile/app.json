@@ -28,6 +28,13 @@
     "plugins": [
       "expo-router",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "NexBus needs access to your photos to set a profile picture.",
+          "cameraPermission": "NexBus needs camera access to take a profile photo."
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",

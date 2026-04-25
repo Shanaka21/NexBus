@@ -128,7 +128,17 @@ export default function NotificationsScreen() {
           </View>
         }
         renderItem={({ item }) => (
-          <View style={[styles.card, !item.read && styles.cardUnread]}>
+          <TouchableOpacity
+            style={[styles.card, !item.read && styles.cardUnread]}
+            activeOpacity={0.85}
+            onPress={() => {
+              if (!item.read) {
+                setNotifs((prev) =>
+                  prev.map((n) => n.id === item.id ? { ...n, read: true } : n)
+                );
+              }
+            }}
+          >
             {!item.read && <View style={styles.unreadDot} />}
             <View style={[styles.iconBox, { backgroundColor: item.iconBg }]}>
               <Ionicons name={item.icon as any} size={22} color={item.iconColor} />
@@ -138,7 +148,7 @@ export default function NotificationsScreen() {
               <Text style={styles.cardBody}>{item.body}</Text>
               <Text style={styles.cardTime}>{item.time}</Text>
             </View>
-          </View>
+          </TouchableOpacity>
         )}
       />
     </View>

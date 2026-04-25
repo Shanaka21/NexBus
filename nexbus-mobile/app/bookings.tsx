@@ -8,6 +8,7 @@ import {
   StatusBar,
   Alert,
   ActivityIndicator,
+  ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
@@ -163,9 +164,7 @@ export default function BookingsScreen() {
           data={filtered}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
-          ListEmptyComponent={
-            <Text style={styles.emptyText}>No bookings found.</Text>
-          }
+          ListEmptyComponent={<EmptyState uid={getUserId()} onSeeded={fetchBookings} router={router} />}
           renderItem={({ item }) => (
             <View style={styles.bookingCard}>
               <View style={styles.cardHeader}>
@@ -272,6 +271,122 @@ export default function BookingsScreen() {
     </View>
   );
 }
+
+const FEATURED_ROUTES = [
+  { number: "48", from: "Fort",     to: "Kandy",      fare: 420, km: 116, duration: "3 h",      type: "Semi-Luxury", stops: "Fort · Kelaniya · Kegalle · Kadugannawa · Kandy" },
+  { number: "17", from: "Panadura", to: "Kandy",      fare: 350, km: 135, duration: "4 h",      type: "Ordinary",    stops: "Panadura · Nugegoda · Kohuwala · Peradeniya · Kandy" },
+  { number: "05", from: "Fort",     to: "Kurunegala", fare: 245, km: 94,  duration: "2 h 30 m", type: "Ordinary",    stops: "Fort · Gampaha · Veyangoda · Nittambuwa · Kurunegala" },
+];
+
+function EmptyState({ uid, onSeeded, router }: { uid: string | null; onSeeded: () => void; router: any }) {
+  const [seeding, setSeeding] = useState(false);
+
+  const handleSeed = async () => {
+    if (!uid) { Alert.alert("Not logged in", "Please log in to load demo bookings."); return; }
+    setSeeding(true);
+    try {
+      const res = await fetch(`${API_URL}/bookings/seed`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: uid }),
+      });
+      const data = await res.json();
+      if (res.ok) { onSeeded(); }
+      else { Alert.alert("Error", data.error || "Failed to load demo bookings."); }
+    } catch {
+      Alert.alert("Error", "Could not connect to server.");
+    } finally {
+      setSeeding(false);
+    }
+  };
+
+  return (
+    <ScrollView contentContainerStyle={emptyStyles.wrap} scrollEnabled={false}>
+      <Ionicons name="ticket-outline" size={48} color="#ccc" />
+      <Text style={emptyStyles.title}>No Bookings Yet</Text>
+      <Text style={emptyStyles.sub}>Book a seat on one of Sri Lanka&apos;s most popular routes</Text>
+
+      {FEATURED_ROUTES.map((r) => (
+        <View key={r.number} style={emptyStyles.routeCard}>
+          <View style={emptyStyles.routeTop}>
+            <View style={emptyStyles.numberBox}>
+              <Text style={emptyStyles.numberText}>{r.number}</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={emptyStyles.routeTitleRow}>
+                <Text style={emptyStyles.routeTitle}>{r.from} → {r.to}</Text>
+                <View style={[emptyStyles.typeBadge, r.type === "Semi-Luxury" && emptyStyles.typeBadgeLux]}>
+                  <Text style={[emptyStyles.typeText, r.type === "Semi-Luxury" && { color: "#f5a623" }]}>{r.type}</Text>
+                </View>
+              </View>
+              <View style={emptyStyles.metaRow}>
+                <Ionicons name="navigate-outline" size={11} color="#aaa" />
+                <Text style={emptyStyles.metaText}>{r.km} km</Text>
+                <Text style={emptyStyles.dot}>·</Text>
+                <Ionicons name="time-outline" size={11} color="#aaa" />
+                <Text style={emptyStyles.metaText}>{r.duration}</Text>
+                <Text style={emptyStyles.dot}>·</Text>
+                <Text style={[emptyStyles.metaText, { color: "#1a3cff", fontWeight: "700" }]}>LKR {r.fare}/seat</Text>
+              </View>
+              <Text style={emptyStyles.stops} numberOfLines={1}>{r.stops}</Text>
+            </View>
+          </View>
+          <TouchableOpacity style={emptyStyles.bookBtn} onPress={() => router.push("/newbooking")}>
+            <Text style={emptyStyles.bookBtnText}>Book Now</Text>
+          </TouchableOpacity>
+        </View>
+      ))}
+
+      <TouchableOpacity style={emptyStyles.demoBtn} onPress={handleSeed} disabled={seeding}>
+        {seeding
+          ? <ActivityIndicator color="#1a3cff" size="small" />
+          : <>
+              <Ionicons name="flash-outline" size={16} color="#1a3cff" />
+              <Text style={emptyStyles.demoBtnText}>Load Sample Bookings</Text>
+            </>
+        }
+      </TouchableOpacity>
+    </ScrollView>
+  );
+}
+
+const emptyStyles = StyleSheet.create({
+  wrap:        { paddingHorizontal: 16, paddingTop: 24, paddingBottom: 40, alignItems: "center" },
+  title:       { fontSize: 18, fontWeight: "bold", color: "#1a1a4e", marginTop: 12, marginBottom: 4 },
+  sub:         { fontSize: 13, color: "#aaa", textAlign: "center", marginBottom: 20, lineHeight: 20 },
+
+  routeCard: {
+    width: "100%", backgroundColor: "#fff", borderRadius: 16,
+    padding: 14, marginBottom: 12,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
+  },
+  routeTop:      { flexDirection: "row", gap: 12, marginBottom: 10 },
+  numberBox:     { width: 44, height: 44, borderRadius: 10, backgroundColor: "#f0f4ff", alignItems: "center", justifyContent: "center" },
+  numberText:    { fontSize: 16, fontWeight: "bold", color: "#1a3cff" },
+  routeTitleRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 },
+  routeTitle:    { fontSize: 14, fontWeight: "700", color: "#1a1a4e" },
+  typeBadge:     { backgroundColor: "#f0f4ff", borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
+  typeBadgeLux:  { backgroundColor: "#fff8e1" },
+  typeText:      { fontSize: 10, fontWeight: "700", color: "#1a3cff" },
+  metaRow:       { flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 4 },
+  metaText:      { fontSize: 11, color: "#aaa" },
+  dot:           { fontSize: 11, color: "#ddd" },
+  stops:         { fontSize: 11, color: "#bbb", fontStyle: "italic" },
+  bookBtn: {
+    backgroundColor: "#f0f4ff", borderRadius: 10, paddingVertical: 9,
+    alignItems: "center", borderWidth: 1, borderColor: "#d0d8ff",
+  },
+  bookBtnText: { fontSize: 13, fontWeight: "700", color: "#1a3cff" },
+
+  demoBtn: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    marginTop: 8, paddingVertical: 12, paddingHorizontal: 20,
+    borderRadius: 12, borderWidth: 1.5, borderColor: "#d0d8ff",
+    borderStyle: "dashed",
+  },
+  demoBtnText: { fontSize: 14, fontWeight: "600", color: "#1a3cff" },
+});
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f0f0f5" },

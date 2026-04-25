@@ -14,8 +14,8 @@ export const clearSession = () => {
   userEmail = null;
 };
 
-// Keep setUserId for backward compatibility
-export const setUserId = (uid) => { userId = uid; };
+export const setUserId   = (uid)  => { userId    = uid;   };
+export const setUserName = (name) => { userName  = name;  };
 
 export const getUserId    = () => userId;
 export const getUserName  = () => userName;

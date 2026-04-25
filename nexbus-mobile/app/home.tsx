@@ -8,12 +8,55 @@ import {
   StatusBar,
   TextInput,
   FlatList,
+  Linking,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
+import * as Location from "expo-location";
 import { API_URL } from "./config";
 import { getUserId } from "./userSession";
+
+type BusStop = { name: string; lat: number; lng: number };
+
+const BUS_STOPS: BusStop[] = [
+  { name: "Colombo Fort Bus Stand",   lat: 6.9339, lng: 79.8477 },
+  { name: "Pettah Central Bus Stand", lat: 6.9374, lng: 79.8508 },
+  { name: "Bambalapitiya Bus Stop",   lat: 6.8882, lng: 79.8551 },
+  { name: "Kollupitiya Bus Stop",     lat: 6.8913, lng: 79.8516 },
+  { name: "Wellawatte Bus Stop",      lat: 6.8704, lng: 79.8598 },
+  { name: "Dehiwala Bus Stand",       lat: 6.8521, lng: 79.8650 },
+  { name: "Mount Lavinia Bus Stand",  lat: 6.8310, lng: 79.8680 },
+  { name: "Moratuwa Bus Stand",       lat: 6.7736, lng: 79.8828 },
+  { name: "Panadura Bus Stand",       lat: 6.7141, lng: 79.9003 },
+  { name: "Nugegoda Bus Stand",       lat: 6.8720, lng: 79.8990 },
+  { name: "Maharagama Bus Stand",     lat: 6.8484, lng: 79.9262 },
+  { name: "Kottawa Bus Stand",        lat: 6.8370, lng: 79.9710 },
+  { name: "Homagama Bus Stand",       lat: 6.8398, lng: 80.0022 },
+  { name: "Rajagiriya Bus Stand",     lat: 6.9079, lng: 79.9010 },
+  { name: "Battaramulla Bus Stand",   lat: 6.9023, lng: 79.9212 },
+  { name: "Kaduwela Bus Stand",       lat: 6.9382, lng: 79.9901 },
+  { name: "Kelaniya Bus Stand",       lat: 6.9548, lng: 79.9224 },
+  { name: "Wattala Bus Stand",        lat: 7.0692, lng: 79.9049 },
+  { name: "Negombo Bus Stand",        lat: 7.2084, lng: 79.8374 },
+  { name: "Galle Bus Stand",          lat: 6.0535, lng: 80.2209 },
+  { name: "Kandy Bus Stand",          lat: 7.2906, lng: 80.6337 },
+  { name: "Kurunegala Bus Stand",     lat: 7.4867, lng: 80.3647 },
+  { name: "Avissawella Bus Stand",    lat: 6.9491, lng: 80.2135 },
+  { name: "Nittambuwa Bus Stand",     lat: 7.0533, lng: 80.0955 },
+];
+
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * (Math.PI / 180)) *
+    Math.cos(lat2 * (Math.PI / 180)) *
+    Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 type Bus = {
   id: string;
@@ -37,17 +80,54 @@ type Booking = {
 };
 
 const QUICK_ROUTES = [
-  { number: "138", from: "Fort", to: "Maharagama", icon: "bus" as const },
-  { number: "122", from: "Pettah", to: "Avissawella", icon: "bus" as const },
-  { number: "190", from: "Meegoda", to: "Pettah", icon: "bus" as const },
-  { number: "177", from: "Kaduwela", to: "Kollupitiya", icon: "bus" as const },
+  { number: "48",  from: "Fort",     to: "Kandy" },
+  { number: "17",  from: "Pettah",   to: "Kottawa" },
+  { number: "05",  from: "Fort",     to: "Moratuwa" },
+  { number: "01",  from: "Fort",     to: "Galle" },
+  { number: "06",  from: "Fort",     to: "Dehiwala" },
+  { number: "100", from: "Fort",     to: "Kurunegala" },
+  { number: "138", from: "Fort",     to: "Maharagama" },
+  { number: "187", from: "Fort",     to: "Battaramulla" },
+  { number: "14",  from: "Pettah",   to: "Kelaniya" },
+  { number: "122", from: "Pettah",   to: "Avissawella" },
+  { number: "400", from: "Fort",     to: "Negombo" },
+  { number: "177", from: "Kaduwela", to: "Kollupitiya" },
 ];
 
 export default function HomeScreen() {
   const router = useRouter();
   const [searchText, setSearchText] = useState("");
-  const [buses, setBuses] = useState<Bus[]>([]);
+  const [buses, setBuses]   = useState<Bus[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
+
+  type NearestStop = { stop: BusStop; distanceM: number };
+  const [nearestStop, setNearestStop] = useState<NearestStop | null>(null);
+  const [stopLoading, setStopLoading] = useState(false);
+
+  const findNearestStop = async () => {
+    setStopLoading(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") { setStopLoading(false); return; }
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const { latitude, longitude } = loc.coords;
+      let nearest = BUS_STOPS[0];
+      let minKm   = haversineKm(latitude, longitude, BUS_STOPS[0].lat, BUS_STOPS[0].lng);
+      for (const stop of BUS_STOPS.slice(1)) {
+        const km = haversineKm(latitude, longitude, stop.lat, stop.lng);
+        if (km < minKm) { minKm = km; nearest = stop; }
+      }
+      setNearestStop({ stop: nearest, distanceM: Math.round(minKm * 1000) });
+    } catch { /* silently fail */ }
+    setStopLoading(false);
+  };
+
+  const openDirections = () => {
+    if (!nearestStop) return;
+    const { lat, lng } = nearestStop.stop;
+    // Opens Apple Maps walking directions to the bus stop
+    Linking.openURL(`maps://?daddr=${lat},${lng}&dirflg=w`);
+  };
 
   useEffect(() => {
     fetch(`${API_URL}/buses`)
@@ -96,7 +176,7 @@ export default function HomeScreen() {
         <Text style={styles.headerTitle}>NexBus</Text>
         <TouchableOpacity
           style={styles.bellWrapper}
-          onPress={() => router.push("/bookings")}
+          onPress={() => router.push("/notifications")}
         >
           <Ionicons name="notifications-outline" size={26} color="#1a1a4e" />
           {notifCount > 0 && (
@@ -265,6 +345,27 @@ export default function HomeScreen() {
             </LinearGradient>
           </TouchableOpacity>
 
+          {/* ── Smart Suggestions Banner ── */}
+          <TouchableOpacity
+            style={styles.smartBanner}
+            onPress={() => router.push("/smartsuggestions" as any)}
+            activeOpacity={0.85}
+          >
+            <View style={styles.smartBannerLeft}>
+              <View style={styles.smartBannerIcon}>
+                <Ionicons name="bulb" size={20} color="#1a3cff" />
+              </View>
+              <View>
+                <Text style={styles.smartBannerTitle}>Smart Suggestions</Text>
+                <Text style={styles.smartBannerSub}>Find your best route instantly</Text>
+              </View>
+            </View>
+            <View style={styles.smartBannerArrow}>
+              <Text style={styles.smartBannerArrowText}>Try Now</Text>
+              <Ionicons name="arrow-forward" size={14} color="#1a3cff" />
+            </View>
+          </TouchableOpacity>
+
           {/* ── Quick Book ── */}
           <Text style={styles.sectionTitle}>Quick Book</Text>
           <ScrollView
@@ -297,27 +398,59 @@ export default function HomeScreen() {
           {/* ── Nearest Bus Stop Card ── */}
           <View style={styles.card}>
             <View style={styles.cardHeader}>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.cardTitle}>Nearest Bus Stop</Text>
-                <Text style={styles.cardSubtitle}>Bambalapitiya Station (150m)</Text>
+                <Text style={styles.cardSubtitle} numberOfLines={1}>
+                  {nearestStop
+                    ? `${nearestStop.stop.name} (${nearestStop.distanceM < 1000
+                        ? `${nearestStop.distanceM}m`
+                        : `${(nearestStop.distanceM / 1000).toFixed(1)}km`})`
+                    : "Tap to find your nearest stop"}
+                </Text>
               </View>
               <View style={styles.busIconBox}>
                 <Ionicons name="bus" size={22} color="#1a3cff" />
               </View>
             </View>
-            <View style={styles.mapPlaceholder}>
-              <Ionicons name="map" size={40} color="#1a3cff" opacity={0.3} />
-              <View style={styles.mapPin}>
-                <Ionicons name="location" size={28} color="#1a3cff" />
-              </View>
-            </View>
+
+            {/* Map placeholder / found state */}
             <TouchableOpacity
-              style={styles.directionsButton}
-              onPress={() => router.push("/map")}
+              style={styles.mapPlaceholder}
+              onPress={nearestStop ? openDirections : findNearestStop}
+              activeOpacity={0.8}
             >
-              <Ionicons name="navigate" size={16} color="#1a3cff" />
-              <Text style={styles.directionsText}>Get Directions</Text>
+              {nearestStop ? (
+                <>
+                  <Ionicons name="location" size={44} color="#1a3cff" opacity={0.6} />
+                  <Text style={styles.stopFoundText}>{nearestStop.stop.name}</Text>
+                </>
+              ) : (
+                <>
+                  <Ionicons name="map" size={40} color="#1a3cff" opacity={0.3} />
+                  <View style={styles.mapPin}>
+                    <Ionicons name="location" size={28} color="#1a3cff" />
+                  </View>
+                </>
+              )}
             </TouchableOpacity>
+
+            {nearestStop ? (
+              <TouchableOpacity style={styles.directionsButton} onPress={openDirections}>
+                <Ionicons name="navigate" size={16} color="#1a3cff" />
+                <Text style={styles.directionsText}>Open in Apple Maps</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={styles.directionsButton}
+                onPress={findNearestStop}
+                disabled={stopLoading}
+              >
+                <Ionicons name={stopLoading ? "hourglass-outline" : "location-outline"} size={16} color="#1a3cff" />
+                <Text style={styles.directionsText}>
+                  {stopLoading ? "Finding stop…" : "Find Nearest Stop"}
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* ── Recent Routes ── */}
@@ -584,6 +717,15 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
 
+  /* Smart Suggestions Banner */
+  smartBanner: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "#eef2ff", borderRadius: 14, padding: 14, marginBottom: 20, borderWidth: 1.5, borderColor: "#c8d6ff" },
+  smartBannerLeft:  { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
+  smartBannerIcon:  { width: 38, height: 38, backgroundColor: "#fff", borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  smartBannerTitle: { fontSize: 14, fontWeight: "700", color: "#1a1a4e" },
+  smartBannerSub:   { fontSize: 12, color: "#6677cc", marginTop: 1 },
+  smartBannerArrow: { flexDirection: "row", alignItems: "center", gap: 4 },
+  smartBannerArrowText: { fontSize: 13, fontWeight: "700", color: "#1a3cff" },
+
   /* Quick Book */
   quickBookScroll: { marginBottom: 20 },
   quickChip: {
@@ -649,6 +791,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   mapPin: { position: "absolute" },
+  stopFoundText: { fontSize: 13, fontWeight: "600", color: "#1a3cff", marginTop: 8, textAlign: "center" },
   directionsButton: {
     flexDirection: "row",
     alignItems: "center",
