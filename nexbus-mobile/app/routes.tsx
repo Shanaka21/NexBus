@@ -8,6 +8,7 @@ import { Stack, useRouter, useFocusEffect } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
 import { API_URL } from "./config";
+import { useTheme } from "./themeContext";
 
 const FAVORITES_KEY = "nexbus_favorite_routes";
 
@@ -19,20 +20,56 @@ type Bus = {
   status: string;
 };
 
-export default function RoutesScreen() {
-  const [activeTab, setActiveTab] = useState("All Routes");
-  const [buses, setBuses]         = useState<Bus[]>([]);
-  const [favorites, setFavorites] = useState<Set<string>>(new Set());
-  const [loading, setLoading]     = useState(true);
+const light = {
+  bg:            "#fff",
+  header:        "#fff",
+  text:          "#1a1a4e",
+  tabBorder:     "#eee",
+  liveTagBg:     "#f0f0f5",
+  liveTagText:   "#555",
+  card:          "#fff",
+  cardBorder:    "#eee",
+  iconBox:       "#f0f4ff",
+  starBorder:    "#eee",
+  smartBtn:      "#f0f4ff",
+  smartBtnBorder:"#c8d6ff",
+  bottomNav:     "#fff",
+  bottomNavBorder:"#eee",
+  subText:       "#888",
+};
 
-  // Nearby state
+const dark = {
+  bg:            "#0d0d1a",
+  header:        "#0d0d1a",
+  text:          "#dde0ff",
+  tabBorder:     "#2a2a4e",
+  liveTagBg:     "#1e2250",
+  liveTagText:   "#aaa",
+  card:          "#1a1a2e",
+  cardBorder:    "#2a2a4e",
+  iconBox:       "#1e2250",
+  starBorder:    "#2a2a4e",
+  smartBtn:      "#1e2250",
+  smartBtnBorder:"#2a3480",
+  bottomNav:     "#1a1a2e",
+  bottomNavBorder:"#2a2a4e",
+  subText:       "#888",
+};
+
+export default function RoutesScreen() {
+  const router = useRouter();
+  const { isDark } = useTheme();
+  const p = isDark ? dark : light;
+
+  const [activeTab, setActiveTab]       = useState("All Routes");
+  const [buses, setBuses]               = useState<Bus[]>([]);
+  const [favorites, setFavorites]       = useState<Set<string>>(new Set());
+  const [loading, setLoading]           = useState(true);
   const [locationStatus, setLocationStatus] = useState<"idle" | "loading" | "granted" | "denied">("idle");
   const [locationLabel, setLocationLabel]   = useState("");
 
-  const router = useRouter();
   const tabs = ["All Routes", "Favorites", "Nearby"];
 
-  // Load buses
   useEffect(() => {
     fetch(`${API_URL}/buses`)
       .then((r) => r.json())
@@ -50,7 +87,6 @@ export default function RoutesScreen() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Load favorites from storage
   useFocusEffect(
     useCallback(() => {
       AsyncStorage.getItem(FAVORITES_KEY).then((raw) => {
@@ -66,47 +102,33 @@ export default function RoutesScreen() {
 
   const toggleFavorite = (id: string) => {
     const next = new Set(favorites);
-    if (next.has(id)) next.delete(id);
-    else              next.add(id);
+    if (next.has(id)) next.delete(id); else next.add(id);
     saveFavorites(next);
   };
 
-  // Request location for Nearby tab
   const requestNearby = async () => {
     setLocationStatus("loading");
     const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== "granted") {
-      setLocationStatus("denied");
-      return;
-    }
+    if (status !== "granted") { setLocationStatus("denied"); return; }
     const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
     const [geo] = await Location.reverseGeocodeAsync(loc.coords);
-    const label = geo?.city || geo?.subregion || geo?.region || "your area";
-    setLocationLabel(label);
+    setLocationLabel(geo?.city || geo?.subregion || geo?.region || "your area");
     setLocationStatus("granted");
   };
 
   useEffect(() => {
-    if (activeTab === "Nearby" && locationStatus === "idle") {
-      requestNearby();
-    }
+    if (activeTab === "Nearby" && locationStatus === "idle") requestNearby();
   }, [activeTab]);
 
-  // Data to show per tab
-  const displayBuses =
-    activeTab === "Favorites"
-      ? buses.filter((b) => favorites.has(b.id))
-      : buses;
+  const displayBuses = activeTab === "Favorites" ? buses.filter((b) => favorites.has(b.id)) : buses;
 
   const renderEmpty = () => {
     if (activeTab === "Favorites") {
       return (
         <View style={styles.emptyBox}>
           <Ionicons name="star-outline" size={48} color="#ccc" />
-          <Text style={styles.emptyTitle}>No Favourites Yet</Text>
-          <Text style={styles.emptySubtitle}>
-            Tap the ★ on any route to save it here
-          </Text>
+          <Text style={[styles.emptyTitle, { color: p.text }]}>No Favourites Yet</Text>
+          <Text style={styles.emptySubtitle}>Tap the ★ on any route to save it here</Text>
         </View>
       );
     }
@@ -114,18 +136,18 @@ export default function RoutesScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: p.bg }]}>
       <Stack.Screen options={{ headerShown: false }} />
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={p.header} />
 
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: p.header }]}>
         <TouchableOpacity onPress={() => router.push("/home")}>
-          <Ionicons name="arrow-back" size={24} color="#1a1a4e" />
+          <Ionicons name="arrow-back" size={24} color={p.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>NexBus</Text>
+        <Text style={[styles.headerTitle, { color: p.text }]}>NexBus</Text>
         <TouchableOpacity
-          style={styles.smartBtn}
+          style={[styles.smartBtn, { backgroundColor: p.smartBtn, borderColor: p.smartBtnBorder }]}
           onPress={() => router.push("/smartsuggestions" as any)}
         >
           <Ionicons name="bulb-outline" size={14} color="#1a3cff" />
@@ -134,10 +156,10 @@ export default function RoutesScreen() {
       </View>
 
       {/* Tabs */}
-      <View style={styles.tabRow}>
+      <View style={[styles.tabRow, { borderBottomColor: p.tabBorder }]}>
         {tabs.map((tab) => (
           <TouchableOpacity key={tab} style={styles.tab} onPress={() => setActiveTab(tab)}>
-            <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
+            <Text style={[styles.tabText, { color: p.subText }, activeTab === tab && styles.tabTextActive]}>
               {tab}
             </Text>
             {activeTab === tab && <View style={styles.tabUnderline} />}
@@ -147,14 +169,12 @@ export default function RoutesScreen() {
 
       {/* Section header */}
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>
-          {activeTab === "Favorites" ? "Saved Routes" :
-           activeTab === "Nearby"   ? "Nearby Routes" :
-                                      "Active Buses"}
+        <Text style={[styles.sectionTitle, { color: p.text }]}>
+          {activeTab === "Favorites" ? "Saved Routes" : activeTab === "Nearby" ? "Nearby Routes" : "Active Buses"}
         </Text>
         {activeTab === "All Routes" && (
-          <View style={styles.liveTag}>
-            <Text style={styles.liveTagText}>Live Updates</Text>
+          <View style={[styles.liveTag, { backgroundColor: p.liveTagBg }]}>
+            <Text style={[styles.liveTagText, { color: p.liveTagText }]}>Live Updates</Text>
           </View>
         )}
         {activeTab === "Favorites" && (
@@ -163,35 +183,31 @@ export default function RoutesScreen() {
           </View>
         )}
         {activeTab === "Nearby" && locationStatus === "granted" && (
-          <View style={styles.locationTag}>
+          <View style={[styles.locationTag, { backgroundColor: p.smartBtn }]}>
             <Ionicons name="location" size={12} color="#1a3cff" />
             <Text style={styles.locationTagText}>{locationLabel}</Text>
           </View>
         )}
       </View>
 
-      {/* Nearby permission states */}
       {activeTab === "Nearby" && locationStatus === "loading" && (
         <View style={styles.nearbyBox}>
           <ActivityIndicator size="large" color="#1a3cff" />
-          <Text style={styles.nearbyText}>Getting your location…</Text>
+          <Text style={[styles.nearbyText, { color: p.subText }]}>Getting your location…</Text>
         </View>
       )}
 
       {activeTab === "Nearby" && locationStatus === "denied" && (
         <View style={styles.nearbyBox}>
           <Ionicons name="location-outline" size={48} color="#ccc" />
-          <Text style={styles.emptyTitle}>Location Access Denied</Text>
-          <Text style={styles.emptySubtitle}>
-            Enable location permission in Settings to see nearby routes
-          </Text>
+          <Text style={[styles.emptyTitle, { color: p.text }]}>Location Access Denied</Text>
+          <Text style={styles.emptySubtitle}>Enable location permission in Settings to see nearby routes</Text>
           <TouchableOpacity style={styles.retryBtn} onPress={requestNearby}>
             <Text style={styles.retryBtnText}>Try Again</Text>
           </TouchableOpacity>
         </View>
       )}
 
-      {/* Bus list — shown for All Routes, Favorites, and Nearby (after permission granted) */}
       {(activeTab !== "Nearby" || locationStatus === "granted") && (
         loading ? (
           <ActivityIndicator size="large" color="#1a3cff" style={{ marginTop: 40 }} />
@@ -207,6 +223,7 @@ export default function RoutesScreen() {
                 isFav={favorites.has(item.id)}
                 onToggleFav={() => toggleFavorite(item.id)}
                 onTrack={() => router.push("/map")}
+                palette={p}
               />
             )}
           />
@@ -214,67 +231,59 @@ export default function RoutesScreen() {
       )}
 
       {/* Bottom Nav */}
-      <View style={styles.bottomNav}>
+      <View style={[styles.bottomNav, { backgroundColor: p.bottomNav, borderTopColor: p.bottomNavBorder }]}>
         <TouchableOpacity style={styles.navItem} onPress={() => router.push("/home")}>
-          <Ionicons name="home-outline" size={22} color="#888" />
-          <Text style={styles.navText}>Home</Text>
+          <Ionicons name="home-outline" size={22} color={p.subText} />
+          <Text style={[styles.navText, { color: p.subText }]}>Home</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.navItem}>
           <Ionicons name="bus" size={22} color="#1a3cff" />
           <Text style={[styles.navText, { color: "#1a3cff" }]}>Routes</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.navItem} onPress={() => router.push("/map")}>
-          <Ionicons name="map-outline" size={22} color="#888" />
-          <Text style={styles.navText}>Live Map</Text>
+          <Ionicons name="map-outline" size={22} color={p.subText} />
+          <Text style={[styles.navText, { color: p.subText }]}>Live Map</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.navItem} onPress={() => router.push("/bookings" as any)}>
-          <Ionicons name="ticket-outline" size={22} color="#888" />
-          <Text style={styles.navText}>Bookings</Text>
+          <Ionicons name="ticket-outline" size={22} color={p.subText} />
+          <Text style={[styles.navText, { color: p.subText }]}>Bookings</Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 }
 
-function BusCard({
-  item, isFav, onToggleFav, onTrack,
-}: {
+function BusCard({ item, isFav, onToggleFav, onTrack, palette }: {
   item: Bus; isFav: boolean;
   onToggleFav: () => void; onTrack: () => void;
+  palette: typeof light;
 }) {
   const onTime = item.status === "ON TIME";
   return (
-    <View style={styles.busCard}>
+    <View style={[styles.busCard, { backgroundColor: palette.card, borderColor: palette.cardBorder }]}>
       <View style={styles.busCardTop}>
         <View style={{ flex: 1 }}>
           <View style={[styles.statusBadge, { backgroundColor: onTime ? "#e8f5e9" : "#fff3e0" }]}>
             <View style={[styles.statusDot, { backgroundColor: onTime ? "#4caf50" : "#ff9800" }]} />
-            <Text style={[styles.statusText, { color: onTime ? "#4caf50" : "#ff9800" }]}>
-              {item.status}
-            </Text>
+            <Text style={[styles.statusText, { color: onTime ? "#4caf50" : "#ff9800" }]}>{item.status}</Text>
           </View>
-          <Text style={styles.busRoute}>{item.route} · {item.destination}</Text>
+          <Text style={[styles.busRoute, { color: palette.text }]}>{item.route} · {item.destination}</Text>
           <View style={styles.etaRow}>
             <Ionicons name="location-outline" size={13} color="#888" />
             <Text style={styles.etaText}>{item.from} → {item.destination}</Text>
           </View>
         </View>
-        <View style={styles.busImageBox}>
+        <View style={[styles.busImageBox, { backgroundColor: palette.iconBox }]}>
           <Ionicons name="bus" size={28} color="#1a3cff" />
         </View>
       </View>
-
       <View style={styles.busCardBottom}>
         <TouchableOpacity style={styles.trackButton} onPress={onTrack}>
           <Ionicons name="location" size={16} color="#fff" />
           <Text style={styles.trackButtonText}>Track Live</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.starButton} onPress={onToggleFav}>
-          <Ionicons
-            name={isFav ? "star" : "star-outline"}
-            size={20}
-            color={isFav ? "#f5a623" : "#888"}
-          />
+        <TouchableOpacity style={[styles.starButton, { borderColor: palette.starBorder }]} onPress={onToggleFav}>
+          <Ionicons name={isFav ? "star" : "star-outline"} size={20} color={isFav ? "#f5a623" : "#888"} />
         </TouchableOpacity>
       </View>
     </View>
@@ -282,72 +291,52 @@ function BusCard({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
-  header: {
-    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
-    paddingHorizontal: 20, paddingTop: 54, paddingBottom: 12, backgroundColor: "#fff",
-  },
-  headerTitle: { fontSize: 20, fontWeight: "bold", color: "#1a1a4e" },
-  smartBtn:     { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#f0f4ff", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: "#c8d6ff" },
+  container:    { flex: 1 },
+  header:       { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingTop: 54, paddingBottom: 12 },
+  headerTitle:  { fontSize: 20, fontWeight: "bold" },
+  smartBtn:     { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1 },
   smartBtnText: { fontSize: 12, fontWeight: "700", color: "#1a3cff" },
 
-  tabRow: {
-    flexDirection: "row", paddingHorizontal: 20,
-    borderBottomWidth: 1, borderBottomColor: "#eee",
-  },
+  tabRow:        { flexDirection: "row", paddingHorizontal: 20, borderBottomWidth: 1 },
   tab:           { marginRight: 24, paddingBottom: 10 },
-  tabText:       { fontSize: 15, color: "#888" },
+  tabText:       { fontSize: 15 },
   tabTextActive: { color: "#1a3cff", fontWeight: "600" },
   tabUnderline:  { height: 2, backgroundColor: "#1a3cff", borderRadius: 2, marginTop: 4 },
 
-  sectionHeader: {
-    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
-    paddingHorizontal: 20, paddingVertical: 14,
-  },
-  sectionTitle: { fontSize: 18, fontWeight: "bold", color: "#1a1a4e" },
-  liveTag:      { backgroundColor: "#f0f0f5", paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20 },
-  liveTagText:  { fontSize: 12, color: "#555" },
-  countTag:     { backgroundColor: "#fff3e0", paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20 },
-  countTagText: { fontSize: 12, color: "#f5a623", fontWeight: "600" },
-  locationTag:  { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#f0f4ff", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+  sectionHeader:   { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingVertical: 14 },
+  sectionTitle:    { fontSize: 18, fontWeight: "bold" },
+  liveTag:         { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20 },
+  liveTagText:     { fontSize: 12 },
+  countTag:        { backgroundColor: "#fff3e0", paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20 },
+  countTagText:    { fontSize: 12, color: "#f5a623", fontWeight: "600" },
+  locationTag:     { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   locationTagText: { fontSize: 12, color: "#1a3cff", fontWeight: "600" },
 
-  list: { paddingHorizontal: 20, paddingBottom: 100 },
-  emptyText: { textAlign: "center", color: "#aaa", marginTop: 40, fontSize: 15 },
-
-  emptyBox: { alignItems: "center", paddingTop: 60, gap: 10, paddingHorizontal: 30 },
-  emptyTitle:    { fontSize: 17, fontWeight: "bold", color: "#1a1a4e", marginTop: 6 },
+  list:          { paddingHorizontal: 20, paddingBottom: 100 },
+  emptyText:     { textAlign: "center", color: "#aaa", marginTop: 40, fontSize: 15 },
+  emptyBox:      { alignItems: "center", paddingTop: 60, gap: 10, paddingHorizontal: 30 },
+  emptyTitle:    { fontSize: 17, fontWeight: "bold", marginTop: 6 },
   emptySubtitle: { fontSize: 13, color: "#aaa", textAlign: "center", lineHeight: 20 },
-
-  nearbyBox: { alignItems: "center", paddingTop: 80, gap: 12, paddingHorizontal: 30 },
-  nearbyText:    { fontSize: 14, color: "#888" },
+  nearbyBox:     { alignItems: "center", paddingTop: 80, gap: 12, paddingHorizontal: 30 },
+  nearbyText:    { fontSize: 14 },
   retryBtn:      { marginTop: 10, backgroundColor: "#1a3cff", borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12 },
   retryBtnText:  { color: "#fff", fontWeight: "600", fontSize: 14 },
 
-  busCard: {
-    backgroundColor: "#fff", borderRadius: 16, padding: 16, marginBottom: 16,
-    borderWidth: 1, borderColor: "#eee",
-    shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
-  },
+  busCard:       { borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
   busCardTop:    { flexDirection: "row", justifyContent: "space-between", marginBottom: 14 },
   statusBadge:   { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, marginBottom: 6 },
   statusDot:     { width: 6, height: 6, borderRadius: 3, marginRight: 5 },
   statusText:    { fontSize: 11, fontWeight: "bold" },
-  busRoute:      { fontSize: 17, fontWeight: "bold", color: "#1a1a4e", marginBottom: 4 },
+  busRoute:      { fontSize: 17, fontWeight: "bold", marginBottom: 4 },
   etaRow:        { flexDirection: "row", alignItems: "center", gap: 4 },
   etaText:       { fontSize: 12, color: "#888" },
-  busImageBox:   { width: 56, height: 56, backgroundColor: "#f0f4ff", borderRadius: 12, alignItems: "center", justifyContent: "center", marginLeft: 10 },
+  busImageBox:   { width: 56, height: 56, borderRadius: 12, alignItems: "center", justifyContent: "center", marginLeft: 10 },
   busCardBottom: { flexDirection: "row", alignItems: "center", gap: 10 },
   trackButton:   { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#1a3cff", borderRadius: 12, paddingVertical: 12, gap: 6 },
-  trackButtonText: { color: "#fff", fontWeight: "600", fontSize: 15 },
-  starButton:    { width: 44, height: 44, borderRadius: 22, borderWidth: 1, borderColor: "#eee", alignItems: "center", justifyContent: "center" },
+  trackButtonText:{ color: "#fff", fontWeight: "600", fontSize: 15 },
+  starButton:    { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: "center", justifyContent: "center" },
 
-  bottomNav: {
-    flexDirection: "row", position: "absolute", bottom: 0, left: 0, right: 0,
-    backgroundColor: "#fff", borderTopWidth: 1, borderTopColor: "#eee",
-    paddingVertical: 10, paddingBottom: 24,
-  },
-  navItem: { flex: 1, alignItems: "center", gap: 3 },
-  navText:  { fontSize: 11, color: "#888" },
+  bottomNav:     { flexDirection: "row", position: "absolute", bottom: 0, left: 0, right: 0, borderTopWidth: 1, paddingVertical: 10, paddingBottom: 24 },
+  navItem:       { flex: 1, alignItems: "center", gap: 3 },
+  navText:       { fontSize: 11 },
 });

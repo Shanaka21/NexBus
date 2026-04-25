@@ -14,8 +14,30 @@ import { Stack, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { API_URL } from "./config";
 import { setUserSession } from "./userSession";
+import { useTheme } from "./themeContext";
+
+const light = {
+  bg:        "#f0f0f5",
+  card:      "#fff",
+  text:      "#1a1a4e",
+  inputBg:   "#f5f5f5",
+  inputText: "#333",
+  divider:   "#eee",
+};
+
+const dark = {
+  bg:        "#0d0d1a",
+  card:      "#1a1a2e",
+  text:      "#dde0ff",
+  inputBg:   "#1e2250",
+  inputText: "#dde0ff",
+  divider:   "#2a2a4e",
+};
 
 export default function SignupScreen() {
+  const { isDark } = useTheme();
+  const p = isDark ? dark : light;
+
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -47,45 +69,32 @@ export default function SignupScreen() {
       } else {
         Alert.alert("Error", data.error || "Signup failed");
       }
-    } catch (error) {
+    } catch {
       Alert.alert("Error", "Signup failed. Check your connection.");
     }
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentContainerStyle={[styles.container, { backgroundColor: p.bg }]}>
       <Stack.Screen options={{ headerShown: false }} />
-      <StatusBar barStyle="dark-content" backgroundColor="#f0f0f5" />
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={p.bg} />
 
-      {/* Header */}
       <View style={styles.header}>
-        <LinearGradient
-          colors={["#4f86f7", "#1a3cff", "#0d1b6e"]}
-          style={styles.iconBox}
-        >
+        <LinearGradient colors={["#4f86f7", "#1a3cff", "#0d1b6e"]} style={styles.iconBox}>
           <Ionicons name="bus" size={32} color="#fff" />
         </LinearGradient>
         <Text style={styles.appTitle}>NexBus</Text>
       </View>
 
-      {/* Card */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Create Account</Text>
-        <Text style={styles.cardSubtitle}>
-          Sign up to start tracking your bus
-        </Text>
+      <View style={[styles.card, { backgroundColor: p.card }]}>
+        <Text style={[styles.cardTitle, { color: p.text }]}>Create Account</Text>
+        <Text style={styles.cardSubtitle}>Sign up to start tracking your bus</Text>
 
-        {/* Name */}
-        <Text style={styles.label}>Full Name</Text>
-        <View style={styles.inputBox}>
-          <Ionicons
-            name="person-outline"
-            size={18}
-            color="#aaa"
-            style={styles.inputIcon}
-          />
+        <Text style={[styles.label, { color: p.text }]}>Full Name</Text>
+        <View style={[styles.inputBox, { backgroundColor: p.inputBg }]}>
+          <Ionicons name="person-outline" size={18} color="#aaa" style={styles.inputIcon} />
           <TextInput
-            style={styles.input}
+            style={[styles.input, { color: p.inputText }]}
             placeholder="Your full name"
             placeholderTextColor="#aaa"
             value={name}
@@ -93,17 +102,11 @@ export default function SignupScreen() {
           />
         </View>
 
-        {/* Email */}
-        <Text style={styles.label}>Email Address</Text>
-        <View style={styles.inputBox}>
-          <Ionicons
-            name="mail-outline"
-            size={18}
-            color="#aaa"
-            style={styles.inputIcon}
-          />
+        <Text style={[styles.label, { color: p.text }]}>Email Address</Text>
+        <View style={[styles.inputBox, { backgroundColor: p.inputBg }]}>
+          <Ionicons name="mail-outline" size={18} color="#aaa" style={styles.inputIcon} />
           <TextInput
-            style={styles.input}
+            style={[styles.input, { color: p.inputText }]}
             placeholder="Enter your email"
             placeholderTextColor="#aaa"
             value={email}
@@ -113,17 +116,11 @@ export default function SignupScreen() {
           />
         </View>
 
-        {/* Password */}
-        <Text style={styles.label}>Password</Text>
-        <View style={styles.inputBox}>
-          <Ionicons
-            name="lock-closed-outline"
-            size={18}
-            color="#aaa"
-            style={styles.inputIcon}
-          />
+        <Text style={[styles.label, { color: p.text }]}>Password</Text>
+        <View style={[styles.inputBox, { backgroundColor: p.inputBg }]}>
+          <Ionicons name="lock-closed-outline" size={18} color="#aaa" style={styles.inputIcon} />
           <TextInput
-            style={styles.input}
+            style={[styles.input, { color: p.inputText }]}
             placeholder="Create a password"
             placeholderTextColor="#aaa"
             value={password}
@@ -131,25 +128,15 @@ export default function SignupScreen() {
             secureTextEntry={!showPassword}
           />
           <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-            <Ionicons
-              name={showPassword ? "eye-off-outline" : "eye-outline"}
-              size={18}
-              color="#aaa"
-            />
+            <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={18} color="#aaa" />
           </TouchableOpacity>
         </View>
 
-        {/* Confirm Password */}
-        <Text style={styles.label}>Confirm Password</Text>
-        <View style={styles.inputBox}>
-          <Ionicons
-            name="lock-closed-outline"
-            size={18}
-            color="#aaa"
-            style={styles.inputIcon}
-          />
+        <Text style={[styles.label, { color: p.text }]}>Confirm Password</Text>
+        <View style={[styles.inputBox, { backgroundColor: p.inputBg }]}>
+          <Ionicons name="lock-closed-outline" size={18} color="#aaa" style={styles.inputIcon} />
           <TextInput
-            style={styles.input}
+            style={[styles.input, { color: p.inputText }]}
             placeholder="Confirm Password"
             placeholderTextColor="#aaa"
             value={confirmPassword}
@@ -158,7 +145,6 @@ export default function SignupScreen() {
           />
         </View>
 
-        {/* Signup Button */}
         <TouchableOpacity onPress={handleSignup}>
           <LinearGradient
             colors={["#4f86f7", "#1a3cff", "#0d1b6e"]}
@@ -170,10 +156,8 @@ export default function SignupScreen() {
           </LinearGradient>
         </TouchableOpacity>
 
-        {/* Divider */}
-        <View style={styles.divider} />
+        <View style={[styles.divider, { backgroundColor: p.divider }]} />
 
-        {/* Login */}
         <View style={styles.loginRow}>
           <Text style={styles.loginText}>Already have an account? </Text>
           <TouchableOpacity onPress={() => router.replace("/login")}>
@@ -182,7 +166,6 @@ export default function SignupScreen() {
         </View>
       </View>
 
-      {/* Footer */}
       <Text style={styles.footer}>© 2026 NEXBUS SYSTEMS INC.</Text>
     </ScrollView>
   );
@@ -191,101 +174,31 @@ export default function SignupScreen() {
 const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
-    backgroundColor: "#f0f0f5",
     alignItems: "center",
     paddingHorizontal: 24,
     paddingTop: 60,
     paddingBottom: 40,
   },
-  header: {
-    alignItems: "center",
-    marginBottom: 24,
-  },
-  iconBox: {
-    width: 64,
-    height: 64,
-    borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 10,
-  },
-  appTitle: {
-    fontSize: 26,
-    fontWeight: "bold",
-    color: "#1a3cff",
-  },
-  card: {
-    width: "100%",
-    backgroundColor: "#fff",
-    borderRadius: 20,
-    padding: 24,
-  },
-  cardTitle: {
-    fontSize: 22,
-    fontWeight: "bold",
-    color: "#1a1a4e",
-    marginBottom: 6,
-  },
-  cardSubtitle: {
-    fontSize: 14,
-    color: "#888",
-    marginBottom: 24,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#1a1a4e",
-    marginBottom: 8,
-  },
-  inputBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#f5f5f5",
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    marginBottom: 16,
-    height: 52,
-  },
-  inputIcon: {
-    marginRight: 10,
-  },
-  input: {
-    flex: 1,
-    fontSize: 15,
-    color: "#333",
-  },
-  signupButton: {
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: "center",
-  },
-  signupButtonText: {
-    color: "#fff",
-    fontSize: 17,
-    fontWeight: "bold",
-  },
-  divider: {
-    height: 1,
-    backgroundColor: "#eee",
-    marginVertical: 20,
-  },
-  loginRow: {
-    flexDirection: "row",
-    justifyContent: "center",
-  },
-  loginText: {
-    fontSize: 14,
-    color: "#888",
-  },
-  loginLink: {
-    fontSize: 14,
-    fontWeight: "bold",
-    color: "#1a3cff",
-  },
-  footer: {
-    marginTop: 24,
-    fontSize: 11,
-    color: "#aaa",
-    letterSpacing: 1,
-  },
+  header:   { alignItems: "center", marginBottom: 24 },
+  iconBox:  { width: 64, height: 64, borderRadius: 18, alignItems: "center", justifyContent: "center", marginBottom: 10 },
+  appTitle: { fontSize: 26, fontWeight: "bold", color: "#1a3cff" },
+
+  card:        { width: "100%", borderRadius: 20, padding: 24 },
+  cardTitle:   { fontSize: 22, fontWeight: "bold", marginBottom: 6 },
+  cardSubtitle:{ fontSize: 14, color: "#888", marginBottom: 24 },
+
+  label:    { fontSize: 14, fontWeight: "600", marginBottom: 8 },
+  inputBox: { flexDirection: "row", alignItems: "center", borderRadius: 12, paddingHorizontal: 14, marginBottom: 16, height: 52 },
+  inputIcon:{ marginRight: 10 },
+  input:    { flex: 1, fontSize: 15 },
+
+  signupButton:    { borderRadius: 14, paddingVertical: 16, alignItems: "center" },
+  signupButtonText:{ color: "#fff", fontSize: 17, fontWeight: "bold" },
+
+  divider:  { height: 1, marginVertical: 20 },
+  loginRow: { flexDirection: "row", justifyContent: "center" },
+  loginText:{ fontSize: 14, color: "#888" },
+  loginLink:{ fontSize: 14, fontWeight: "bold", color: "#1a3cff" },
+
+  footer: { marginTop: 24, fontSize: 11, color: "#aaa", letterSpacing: 1 },
 });

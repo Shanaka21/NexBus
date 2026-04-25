@@ -16,6 +16,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
 import { API_URL } from "./config";
 import { getUserId } from "./userSession";
+import { useTheme } from "./themeContext";
 
 type BusStop = { name: string; lat: number; lng: number };
 
@@ -94,8 +95,49 @@ const QUICK_ROUTES = [
   { number: "177", from: "Kaduwela", to: "Kollupitiya" },
 ];
 
+const light = {
+  bg:               "#f0f0f5",
+  card:             "#fff",
+  text:             "#1a1a4e",
+  subText:          "#888",
+  searchBg:         "#fff",
+  searchText:       "#333",
+  iconBox:          "#f0f4ff",
+  mapPlaceholder:   "#e8eeff",
+  smartBanner:      "#eef2ff",
+  smartBannerBorder:"#c8d6ff",
+  noTripBanner:     "#f0f4ff",
+  noTripBorder:     "#d0d8ff",
+  bottomNav:        "#fff",
+  bottomNavBorder:  "#eee",
+  directionsBtn:    "#f0f4ff",
+  divider:          "#eee",
+};
+
+const dark = {
+  bg:               "#0d0d1a",
+  card:             "#1a1a2e",
+  text:             "#dde0ff",
+  subText:          "#888",
+  searchBg:         "#1a1a2e",
+  searchText:       "#dde0ff",
+  iconBox:          "#1e2250",
+  mapPlaceholder:   "#1e2250",
+  smartBanner:      "#1e2250",
+  smartBannerBorder:"#2a3480",
+  noTripBanner:     "#1e2250",
+  noTripBorder:     "#2a3480",
+  bottomNav:        "#1a1a2e",
+  bottomNavBorder:  "#2a2a4e",
+  directionsBtn:    "#1e2250",
+  divider:          "#2a2a4e",
+};
+
 export default function HomeScreen() {
   const router = useRouter();
+  const { isDark } = useTheme();
+  const p = isDark ? dark : light;
+
   const [searchText, setSearchText] = useState("");
   const [buses, setBuses]   = useState<Bus[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -125,7 +167,6 @@ export default function HomeScreen() {
   const openDirections = () => {
     if (!nearestStop) return;
     const { lat, lng } = nearestStop.stop;
-    // Opens Apple Maps walking directions to the bus stop
     Linking.openURL(`maps://?daddr=${lat},${lng}&dirflg=w`);
   };
 
@@ -145,10 +186,9 @@ export default function HomeScreen() {
   }, []);
 
   const activeBooking = bookings.find((b) => b.status === "confirmed") ?? null;
-  const recentRoutes = bookings.slice(0, 3);
-  const notifCount = bookings.filter((b) => b.status === "confirmed").length;
+  const recentRoutes  = bookings.slice(0, 3);
+  const notifCount    = bookings.filter((b) => b.status === "confirmed").length;
 
-  // Search
   const results =
     searchText.trim().length === 0
       ? []
@@ -164,21 +204,21 @@ export default function HomeScreen() {
   const isSearching = searchText.trim().length > 0;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: p.bg }]}>
       <Stack.Screen options={{ headerShown: false }} />
-      <StatusBar barStyle="dark-content" backgroundColor="#f0f0f5" />
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={p.bg} />
 
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: p.bg }]}>
         <TouchableOpacity onPress={() => router.push("/sidebar")}>
-          <Ionicons name="menu" size={26} color="#1a1a4e" />
+          <Ionicons name="menu" size={26} color={p.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>NexBus</Text>
+        <Text style={[styles.headerTitle, { color: p.text }]}>NexBus</Text>
         <TouchableOpacity
           style={styles.bellWrapper}
           onPress={() => router.push("/notifications")}
         >
-          <Ionicons name="notifications-outline" size={26} color="#1a1a4e" />
+          <Ionicons name="notifications-outline" size={26} color={p.text} />
           {notifCount > 0 && (
             <View style={styles.badge}>
               <Text style={styles.badgeText}>{notifCount}</Text>
@@ -189,10 +229,10 @@ export default function HomeScreen() {
 
       {/* Search Bar */}
       <View style={styles.searchWrapper}>
-        <View style={styles.searchBar}>
+        <View style={[styles.searchBar, { backgroundColor: p.searchBg }]}>
           <Ionicons name="search-outline" size={18} color="#aaa" />
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, { color: p.searchText }]}
             placeholder="Search route or destination..."
             placeholderTextColor="#aaa"
             value={searchText}
@@ -218,7 +258,7 @@ export default function HomeScreen() {
           ListEmptyComponent={
             <View style={styles.emptyBox}>
               <Ionicons name="search-outline" size={40} color="#ccc" />
-              <Text style={styles.emptyText}>No routes found for "{searchText}"</Text>
+              <Text style={[styles.emptyText, { color: p.text }]}>No routes found for "{searchText}"</Text>
               <Text style={styles.emptySubText}>
                 Try a route number like "138" or a place like "Maharagama"
               </Text>
@@ -226,31 +266,25 @@ export default function HomeScreen() {
           }
           renderItem={({ item }) => {
             const statusColor =
-              item.status === "delayed"
-                ? "#ff9800"
-                : item.status === "emergency"
-                ? "#f44336"
-                : "#4caf50";
+              item.status === "delayed"   ? "#ff9800"
+              : item.status === "emergency" ? "#f44336"
+              : "#4caf50";
             const statusBg =
-              item.status === "delayed"
-                ? "#fff3e0"
-                : item.status === "emergency"
-                ? "#ffebee"
-                : "#e8f5e9";
+              item.status === "delayed"   ? "#fff3e0"
+              : item.status === "emergency" ? "#ffebee"
+              : "#e8f5e9";
             const statusLabel =
-              item.status === "delayed"
-                ? "DELAYED"
-                : item.status === "emergency"
-                ? "EMERGENCY"
-                : "ON TIME";
+              item.status === "delayed"   ? "DELAYED"
+              : item.status === "emergency" ? "EMERGENCY"
+              : "ON TIME";
             return (
-              <View style={styles.resultCard}>
+              <View style={[styles.resultCard, { backgroundColor: p.card }]}>
                 <View style={styles.resultTop}>
-                  <View style={styles.routeBadge}>
+                  <View style={[styles.routeBadge, { backgroundColor: p.iconBox }]}>
                     <Text style={styles.routeBadgeText}>{item.route_number}</Text>
                   </View>
                   <View style={styles.resultRouteInfo}>
-                    <Text style={styles.resultRouteName}>
+                    <Text style={[styles.resultRouteName, { color: p.text }]}>
                       {item.start_point} → {item.end_point}
                     </Text>
                     <Text style={styles.resultRouteSub}>
@@ -272,7 +306,7 @@ export default function HomeScreen() {
                     <Text style={styles.trackBtnText}>Track Live</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={styles.bookBtn}
+                    style={[styles.bookBtn, { backgroundColor: p.iconBox }]}
                     onPress={() => { setSearchText(""); router.push("/newbooking" as any); }}
                   >
                     <Ionicons name="ticket-outline" size={14} color="#1a3cff" />
@@ -313,17 +347,14 @@ export default function HomeScreen() {
                   <Text style={styles.activeBannerMetaText}>{activeBooking.seats} seat(s)</Text>
                 </View>
               </View>
-              <TouchableOpacity
-                style={styles.activeBannerBtn}
-                onPress={() => router.push("/map")}
-              >
+              <TouchableOpacity style={styles.activeBannerBtn} onPress={() => router.push("/map")}>
                 <Ionicons name="navigate" size={16} color="#1a3cff" />
                 <Text style={styles.activeBannerBtnText}>Track</Text>
               </TouchableOpacity>
             </LinearGradient>
           ) : (
             <TouchableOpacity
-              style={styles.noTripBanner}
+              style={[styles.noTripBanner, { backgroundColor: p.noTripBanner, borderColor: p.noTripBorder }]}
               onPress={() => router.push("/newbooking" as any)}
             >
               <Ionicons name="add-circle-outline" size={20} color="#1a3cff" />
@@ -347,16 +378,16 @@ export default function HomeScreen() {
 
           {/* ── Smart Suggestions Banner ── */}
           <TouchableOpacity
-            style={styles.smartBanner}
+            style={[styles.smartBanner, { backgroundColor: p.smartBanner, borderColor: p.smartBannerBorder }]}
             onPress={() => router.push("/smartsuggestions" as any)}
             activeOpacity={0.85}
           >
             <View style={styles.smartBannerLeft}>
-              <View style={styles.smartBannerIcon}>
+              <View style={[styles.smartBannerIcon, { backgroundColor: p.card }]}>
                 <Ionicons name="bulb" size={20} color="#1a3cff" />
               </View>
               <View>
-                <Text style={styles.smartBannerTitle}>Smart Suggestions</Text>
+                <Text style={[styles.smartBannerTitle, { color: p.text }]}>Smart Suggestions</Text>
                 <Text style={styles.smartBannerSub}>Find your best route instantly</Text>
               </View>
             </View>
@@ -367,7 +398,7 @@ export default function HomeScreen() {
           </TouchableOpacity>
 
           {/* ── Quick Book ── */}
-          <Text style={styles.sectionTitle}>Quick Book</Text>
+          <Text style={[styles.sectionTitle, { color: p.text }]}>Quick Book</Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -377,29 +408,25 @@ export default function HomeScreen() {
             {QUICK_ROUTES.map((route) => (
               <TouchableOpacity
                 key={route.number}
-                style={styles.quickChip}
+                style={[styles.quickChip, { backgroundColor: p.card }]}
                 onPress={() => router.push("/newbooking" as any)}
               >
-                <View style={styles.quickChipIcon}>
+                <View style={[styles.quickChipIcon, { backgroundColor: p.iconBox }]}>
                   <Ionicons name="bus" size={18} color="#1a3cff" />
                 </View>
                 <Text style={styles.quickChipNumber}>{route.number}</Text>
-                <Text style={styles.quickChipRoute} numberOfLines={1}>
-                  {route.from}
-                </Text>
+                <Text style={styles.quickChipRoute} numberOfLines={1}>{route.from}</Text>
                 <Text style={styles.quickChipArrow}>↓</Text>
-                <Text style={styles.quickChipRoute} numberOfLines={1}>
-                  {route.to}
-                </Text>
+                <Text style={styles.quickChipRoute} numberOfLines={1}>{route.to}</Text>
               </TouchableOpacity>
             ))}
           </ScrollView>
 
           {/* ── Nearest Bus Stop Card ── */}
-          <View style={styles.card}>
+          <View style={[styles.card, { backgroundColor: p.card }]}>
             <View style={styles.cardHeader}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.cardTitle}>Nearest Bus Stop</Text>
+                <Text style={[styles.cardTitle, { color: p.text }]}>Nearest Bus Stop</Text>
                 <Text style={styles.cardSubtitle} numberOfLines={1}>
                   {nearestStop
                     ? `${nearestStop.stop.name} (${nearestStop.distanceM < 1000
@@ -408,14 +435,13 @@ export default function HomeScreen() {
                     : "Tap to find your nearest stop"}
                 </Text>
               </View>
-              <View style={styles.busIconBox}>
+              <View style={[styles.busIconBox, { backgroundColor: p.iconBox }]}>
                 <Ionicons name="bus" size={22} color="#1a3cff" />
               </View>
             </View>
 
-            {/* Map placeholder / found state */}
             <TouchableOpacity
-              style={styles.mapPlaceholder}
+              style={[styles.mapPlaceholder, { backgroundColor: p.mapPlaceholder }]}
               onPress={nearestStop ? openDirections : findNearestStop}
               activeOpacity={0.8}
             >
@@ -435,13 +461,16 @@ export default function HomeScreen() {
             </TouchableOpacity>
 
             {nearestStop ? (
-              <TouchableOpacity style={styles.directionsButton} onPress={openDirections}>
+              <TouchableOpacity
+                style={[styles.directionsButton, { backgroundColor: p.directionsBtn }]}
+                onPress={openDirections}
+              >
                 <Ionicons name="navigate" size={16} color="#1a3cff" />
                 <Text style={styles.directionsText}>Open in Apple Maps</Text>
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
-                style={styles.directionsButton}
+                style={[styles.directionsButton, { backgroundColor: p.directionsBtn }]}
                 onPress={findNearestStop}
                 disabled={stopLoading}
               >
@@ -454,39 +483,33 @@ export default function HomeScreen() {
           </View>
 
           {/* ── Recent Routes ── */}
-          <Text style={styles.sectionTitle}>Recent Routes</Text>
+          <Text style={[styles.sectionTitle, { color: p.text }]}>Recent Routes</Text>
 
           {recentRoutes.length > 0 ? (
             recentRoutes.map((b) => {
               const statusColor =
-                b.status === "confirmed"
-                  ? "#4caf50"
-                  : b.status === "cancelled"
-                  ? "#f44336"
-                  : "#1a3cff";
+                b.status === "confirmed" ? "#4caf50"
+                : b.status === "cancelled" ? "#f44336"
+                : "#1a3cff";
               const statusBg =
-                b.status === "confirmed"
-                  ? "#e8f5e9"
-                  : b.status === "cancelled"
-                  ? "#ffebee"
-                  : "#e3f2fd";
+                b.status === "confirmed" ? "#e8f5e9"
+                : b.status === "cancelled" ? "#ffebee"
+                : "#e3f2fd";
               return (
                 <TouchableOpacity
                   key={b.id}
-                  style={styles.recentCard}
+                  style={[styles.recentCard, { backgroundColor: p.card }]}
                   onPress={() => router.push("/bookings")}
                 >
                   <View style={styles.recentLeft}>
-                    <View style={styles.recentIcon}>
+                    <View style={[styles.recentIcon, { backgroundColor: p.iconBox }]}>
                       <Ionicons name="time" size={20} color="#1a3cff" />
                     </View>
                     <View>
-                      <Text style={styles.recentRoute}>
+                      <Text style={[styles.recentRoute, { color: p.text }]}>
                         {b.from} → {b.to}
                       </Text>
-                      <Text style={styles.recentSub}>
-                        Route {b.route} • {b.date}
-                      </Text>
+                      <Text style={styles.recentSub}>Route {b.route} • {b.date}</Text>
                     </View>
                   </View>
                   <View style={[styles.recentStatus, { backgroundColor: statusBg }]}>
@@ -498,13 +521,13 @@ export default function HomeScreen() {
               );
             })
           ) : (
-            <View style={styles.recentCard}>
+            <View style={[styles.recentCard, { backgroundColor: p.card }]}>
               <View style={styles.recentLeft}>
-                <View style={styles.recentIcon}>
+                <View style={[styles.recentIcon, { backgroundColor: p.iconBox }]}>
                   <Ionicons name="time" size={20} color="#1a3cff" />
                 </View>
                 <View>
-                  <Text style={styles.recentRoute}>Fort → Maharagama</Text>
+                  <Text style={[styles.recentRoute, { color: p.text }]}>Fort → Maharagama</Text>
                   <Text style={styles.recentSub}>Route 138 • 45 mins</Text>
                 </View>
               </View>
@@ -517,22 +540,22 @@ export default function HomeScreen() {
       )}
 
       {/* Bottom Nav */}
-      <View style={styles.bottomNav}>
+      <View style={[styles.bottomNav, { backgroundColor: p.bottomNav, borderTopColor: p.bottomNavBorder }]}>
         <TouchableOpacity style={styles.navItem}>
           <Ionicons name="home" size={22} color="#1a3cff" />
           <Text style={[styles.navText, { color: "#1a3cff" }]}>Home</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.navItem} onPress={() => router.push("/routes")}>
-          <Ionicons name="bus-outline" size={22} color="#888" />
-          <Text style={styles.navText}>Routes</Text>
+          <Ionicons name="bus-outline" size={22} color={p.subText} />
+          <Text style={[styles.navText, { color: p.subText }]}>Routes</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.navItem} onPress={() => router.push("/map")}>
-          <Ionicons name="map-outline" size={22} color="#888" />
-          <Text style={styles.navText}>Live Map</Text>
+          <Ionicons name="map-outline" size={22} color={p.subText} />
+          <Text style={[styles.navText, { color: p.subText }]}>Live Map</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.navItem} onPress={() => router.push("/bookings")}>
-          <Ionicons name="ticket-outline" size={22} color="#888" />
-          <Text style={styles.navText}>Bookings</Text>
+          <Ionicons name="ticket-outline" size={22} color={p.subText} />
+          <Text style={[styles.navText, { color: p.subText }]}>Bookings</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -540,9 +563,8 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f0f0f5" },
+  container: { flex: 1 },
 
-  /* Header */
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -550,301 +572,154 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 54,
     paddingBottom: 12,
-    backgroundColor: "#f0f0f5",
   },
-  headerTitle: { fontSize: 20, fontWeight: "bold", color: "#1a1a4e" },
+  headerTitle: { fontSize: 20, fontWeight: "bold" },
   bellWrapper: { position: "relative" },
   badge: {
     position: "absolute",
-    top: -4,
-    right: -4,
+    top: -4, right: -4,
     backgroundColor: "#f44336",
     borderRadius: 8,
-    minWidth: 16,
-    height: 16,
-    alignItems: "center",
-    justifyContent: "center",
+    minWidth: 16, height: 16,
+    alignItems: "center", justifyContent: "center",
     paddingHorizontal: 3,
   },
   badgeText: { fontSize: 10, color: "#fff", fontWeight: "bold" },
 
-  /* Search */
   searchWrapper: { paddingHorizontal: 20, paddingBottom: 10 },
   searchBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    borderRadius: 30,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2,
+    flexDirection: "row", alignItems: "center",
+    borderRadius: 30, paddingHorizontal: 16, paddingVertical: 10, gap: 10,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
   },
-  searchInput: { flex: 1, fontSize: 15, color: "#333", paddingVertical: 2 },
+  searchInput: { flex: 1, fontSize: 15, paddingVertical: 2 },
 
-  /* Search Results */
   resultsList: { paddingHorizontal: 20, paddingBottom: 120, paddingTop: 4 },
   resultCard: {
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
+    borderRadius: 16, padding: 16, marginBottom: 12,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
   },
   resultTop: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 14 },
-  routeBadge: {
-    backgroundColor: "#f0f4ff",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 10,
-    minWidth: 48,
-    alignItems: "center",
-  },
+  routeBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, minWidth: 48, alignItems: "center" },
   routeBadgeText: { fontSize: 16, fontWeight: "bold", color: "#1a3cff" },
   resultRouteInfo: { flex: 1 },
-  resultRouteName: { fontSize: 15, fontWeight: "700", color: "#1a1a4e" },
+  resultRouteName: { fontSize: 15, fontWeight: "700" },
   resultRouteSub: { fontSize: 12, color: "#888", marginTop: 2 },
   statusChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   statusChipText: { fontSize: 11, fontWeight: "bold" },
   resultActions: { flexDirection: "row", gap: 10 },
   trackBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#1a3cff",
-    borderRadius: 10,
-    paddingVertical: 10,
-    gap: 6,
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
+    backgroundColor: "#1a3cff", borderRadius: 10, paddingVertical: 10, gap: 6,
   },
   trackBtnText: { color: "#fff", fontWeight: "600", fontSize: 13 },
   bookBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#f0f4ff",
-    borderRadius: 10,
-    paddingVertical: 10,
-    gap: 6,
-    borderWidth: 1,
-    borderColor: "#d0d8ff",
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
+    borderRadius: 10, paddingVertical: 10, gap: 6,
+    borderWidth: 1, borderColor: "#d0d8ff",
   },
   bookBtnText: { color: "#1a3cff", fontWeight: "600", fontSize: 13 },
   emptyBox: { alignItems: "center", paddingTop: 60, gap: 12 },
-  emptyText: { fontSize: 15, fontWeight: "600", color: "#555", textAlign: "center" },
+  emptyText: { fontSize: 15, fontWeight: "600", textAlign: "center" },
   emptySubText: { fontSize: 13, color: "#aaa", textAlign: "center", lineHeight: 20 },
 
-  /* Normal scroll content */
   scroll: { paddingHorizontal: 20, paddingBottom: 100 },
 
-  /* Active Booking Banner */
   activeBanner: {
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    borderRadius: 16, padding: 16, marginBottom: 16,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
   },
   activeBannerLeft: { flex: 1 },
-  activeBannerLabel: {
-    fontSize: 10,
-    color: "rgba(255,255,255,0.7)",
-    fontWeight: "700",
-    letterSpacing: 1,
-    marginBottom: 4,
-  },
-  activeBannerRoute: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#fff",
-    marginBottom: 6,
-  },
+  activeBannerLabel: { fontSize: 10, color: "rgba(255,255,255,0.7)", fontWeight: "700", letterSpacing: 1, marginBottom: 4 },
+  activeBannerRoute: { fontSize: 18, fontWeight: "bold", color: "#fff", marginBottom: 6 },
   activeBannerMeta: { flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" },
   activeBannerMetaText: { fontSize: 12, color: "rgba(255,255,255,0.8)" },
   activeBannerBtn: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    alignItems: "center",
-    gap: 4,
-    marginLeft: 12,
+    backgroundColor: "#fff", borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 10,
+    alignItems: "center", gap: 4, marginLeft: 12,
   },
   activeBannerBtnText: { fontSize: 12, fontWeight: "bold", color: "#1a3cff" },
 
-  /* No Trip Banner */
   noTripBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#f0f4ff",
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 16,
-    gap: 10,
-    borderWidth: 1,
-    borderColor: "#d0d8ff",
-    borderStyle: "dashed",
+    flexDirection: "row", alignItems: "center",
+    borderRadius: 14, padding: 14, marginBottom: 16, gap: 10,
+    borderWidth: 1, borderStyle: "dashed",
   },
   noTripText: { flex: 1, fontSize: 14, color: "#1a3cff", fontWeight: "600" },
 
-  /* Map Button */
   mapButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 14,
-    paddingVertical: 16,
-    marginBottom: 20,
-    gap: 10,
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    borderRadius: 14, paddingVertical: 16, marginBottom: 20, gap: 10,
   },
   mapButtonText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
 
-  /* Section title */
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: "bold",
-    color: "#1a1a4e",
-    marginBottom: 12,
-  },
+  sectionTitle: { fontSize: 17, fontWeight: "bold", marginBottom: 12 },
 
-  /* Smart Suggestions Banner */
-  smartBanner: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "#eef2ff", borderRadius: 14, padding: 14, marginBottom: 20, borderWidth: 1.5, borderColor: "#c8d6ff" },
-  smartBannerLeft:  { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
-  smartBannerIcon:  { width: 38, height: 38, backgroundColor: "#fff", borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  smartBannerTitle: { fontSize: 14, fontWeight: "700", color: "#1a1a4e" },
-  smartBannerSub:   { fontSize: 12, color: "#6677cc", marginTop: 1 },
-  smartBannerArrow: { flexDirection: "row", alignItems: "center", gap: 4 },
+  smartBanner: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    borderRadius: 14, padding: 14, marginBottom: 20, borderWidth: 1.5,
+  },
+  smartBannerLeft:      { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
+  smartBannerIcon:      { width: 38, height: 38, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  smartBannerTitle:     { fontSize: 14, fontWeight: "700" },
+  smartBannerSub:       { fontSize: 12, color: "#6677cc", marginTop: 1 },
+  smartBannerArrow:     { flexDirection: "row", alignItems: "center", gap: 4 },
   smartBannerArrowText: { fontSize: 13, fontWeight: "700", color: "#1a3cff" },
 
-  /* Quick Book */
   quickBookScroll: { marginBottom: 20 },
   quickChip: {
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 14,
-    alignItems: "center",
-    width: 100,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
-    gap: 4,
+    borderRadius: 16, padding: 14, alignItems: "center", width: 100,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 6, elevation: 2, gap: 4,
   },
-  quickChipIcon: {
-    width: 36,
-    height: 36,
-    backgroundColor: "#f0f4ff",
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 4,
-  },
+  quickChipIcon: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center", marginBottom: 4 },
   quickChipNumber: { fontSize: 15, fontWeight: "bold", color: "#1a3cff" },
-  quickChipArrow: { fontSize: 12, color: "#ccc" },
-  quickChipRoute: { fontSize: 11, color: "#888", textAlign: "center" },
+  quickChipArrow:  { fontSize: 12, color: "#ccc" },
+  quickChipRoute:  { fontSize: 11, color: "#888", textAlign: "center" },
 
-  /* Nearest Stop Card */
   card: {
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
+    borderRadius: 16, padding: 16, marginBottom: 20,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
   },
-  cardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 12,
-  },
-  cardTitle: { fontSize: 16, fontWeight: "bold", color: "#1a1a4e" },
+  cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 },
+  cardTitle:    { fontSize: 16, fontWeight: "bold" },
   cardSubtitle: { fontSize: 13, color: "#888", marginTop: 2 },
-  busIconBox: {
-    width: 40,
-    height: 40,
-    backgroundColor: "#f0f4ff",
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  busIconBox:   { width: 40, height: 40, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   mapPlaceholder: {
-    height: 130,
-    backgroundColor: "#e8eeff",
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 12,
+    height: 130, borderRadius: 12,
+    alignItems: "center", justifyContent: "center", marginBottom: 12,
   },
   mapPin: { position: "absolute" },
   stopFoundText: { fontSize: 13, fontWeight: "600", color: "#1a3cff", marginTop: 8, textAlign: "center" },
   directionsButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#f0f4ff",
-    borderRadius: 10,
-    paddingVertical: 12,
-    gap: 8,
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    borderRadius: 10, paddingVertical: 12, gap: 8,
   },
   directionsText: { fontSize: 14, color: "#1a3cff", fontWeight: "600" },
 
-  /* Recent Routes */
   recentCard: {
-    backgroundColor: "#fff",
-    borderRadius: 14,
-    padding: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    borderRadius: 14, padding: 14,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     marginBottom: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 1,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
   },
-  recentLeft: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
-  recentIcon: {
-    width: 38,
-    height: 38,
-    backgroundColor: "#f0f4ff",
-    borderRadius: 19,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  recentRoute: { fontSize: 14, fontWeight: "600", color: "#1a1a4e" },
-  recentSub: { fontSize: 12, color: "#888", marginTop: 2 },
-  recentStatus: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+  recentLeft:       { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
+  recentIcon:       { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
+  recentRoute:      { fontSize: 14, fontWeight: "600" },
+  recentSub:        { fontSize: 12, color: "#888", marginTop: 2 },
+  recentStatus:     { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   recentStatusText: { fontSize: 11, fontWeight: "600" },
 
-  /* Bottom Nav */
   bottomNav: {
-    flexDirection: "row",
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: "#fff",
-    borderTopWidth: 1,
-    borderTopColor: "#eee",
-    paddingVertical: 10,
-    paddingBottom: 24,
+    flexDirection: "row", position: "absolute",
+    bottom: 0, left: 0, right: 0,
+    borderTopWidth: 1, paddingVertical: 10, paddingBottom: 24,
   },
   navItem: { flex: 1, alignItems: "center", gap: 3 },
-  navText: { fontSize: 11, color: "#888" },
+  navText:  { fontSize: 11 },
 });
