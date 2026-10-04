@@ -89,7 +89,25 @@ const VEHICLES = [
   { bus_number: 'NC-4002', route_number: '400', route_id: 'r400', status: 'delayed', capacity: 54, booked_seats: 52 },
 ];
 
+const DEMO_USER = { name: 'Demo User', email: 'demo@nexbus.lk', password: 'Demo@1234' };
+
+const DEMO_BOOKINGS = [
+  { route_number: '48',  from: 'Fort',   to: 'Kandy',   time: '07:30 AM', seats: 2, status: 'confirmed', fare: 1200, age_days: 0 },
+  { route_number: '17',  from: 'Pettah', to: 'Kottawa', time: '05:15 PM', seats: 1, status: 'confirmed', fare: 150,  age_days: 1 },
+  { route_number: '400', from: 'Fort',   to: 'Negombo', time: '09:00 AM', seats: 1, status: 'completed', fare: 280,  age_days: 7 },
+  { route_number: '01',  from: 'Fort',   to: 'Galle',   time: '06:45 AM', seats: 3, status: 'cancelled', fare: 1650, age_days: 14 },
+];
+
 async function seed() {
+  // Clear vehicles first (previous runs used random doc IDs) so re-seeding never duplicates
+  const old = await db.collection('vehicles').get();
+  if (!old.empty) {
+    const del = db.batch();
+    old.docs.forEach((d) => del.delete(d.ref));
+    await del.commit();
+    console.log(`  cleared ${old.size} old vehicles`);
+  }
+
   console.log('Seeding routes...');
   const routeBatch = db.batch();
   for (const route of ROUTES) {
@@ -102,10 +120,37 @@ async function seed() {
   console.log('Seeding vehicles...');
   const vehicleBatch = db.batch();
   for (const vehicle of VEHICLES) {
-    vehicleBatch.set(db.collection('vehicles').doc(), vehicle);
+    vehicleBatch.set(db.collection('vehicles').doc(vehicle.bus_number), vehicle);
   }
   await vehicleBatch.commit();
   console.log(`  ✓ ${VEHICLES.length} vehicles written`);
+
+  console.log('Seeding demo user...');
+  let user;
+  try {
+    user = await admin.auth().getUserByEmail(DEMO_USER.email);
+    await admin.auth().updateUser(user.uid, { password: DEMO_USER.password, displayName: DEMO_USER.name });
+  } catch (e) {
+    if (e.code !== 'auth/user-not-found') throw e;
+    user = await admin.auth().createUser({ email: DEMO_USER.email, password: DEMO_USER.password, displayName: DEMO_USER.name });
+  }
+  await db.collection('users').doc(user.uid).set({
+    name: DEMO_USER.name, email: DEMO_USER.email, phone: '0771234567',
+    region: 'Colombo', role: 'passenger', created_at: Date.now()
+  }, { merge: true });
+  console.log(`  ✓ demo user ${DEMO_USER.email} / ${DEMO_USER.password} (uid ${user.uid})`);
+
+  console.log('Seeding demo bookings...');
+  const day = 24 * 60 * 60 * 1000;
+  const bookingBatch = db.batch();
+  DEMO_BOOKINGS.forEach((b, i) => {
+    const { age_days, ...data } = b;
+    bookingBatch.set(db.collection('bookings').doc(`demo-${user.uid}-${i}`), {
+      ...data, user_id: user.uid, created_at: Date.now() - age_days * day
+    });
+  });
+  await bookingBatch.commit();
+  console.log(`  ✓ ${DEMO_BOOKINGS.length} bookings written`);
 
   console.log('Done!');
   process.exit(0);
