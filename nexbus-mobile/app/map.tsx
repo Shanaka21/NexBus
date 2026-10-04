@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity,
   StatusBar, ScrollView,
 } from "react-native";
-import MapView, { Marker } from "react-native-maps";
+import MapView, { Marker } from "../lib/maps";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter } from "expo-router";
 import { useTheme } from "../lib/themeContext";

@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter } from "expo-router";
-import MapView from "react-native-maps";
+import MapView from "../lib/maps";
 
 // Same route dataset as newbooking.tsx
 const ROUTES = [
