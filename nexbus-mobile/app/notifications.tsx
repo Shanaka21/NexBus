@@ -6,8 +6,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { getUserId } from "./userSession";
-import { API_URL } from "./config";
+import { getUserId } from "../lib/userSession";
+import { API_URL } from "../lib/config";
 
 type Notif = {
   id: string;

@@ -6,8 +6,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { API_URL } from "./config";
-import { getUserId } from "./userSession";
+import { API_URL } from "../lib/config";
+import { getUserId } from "../lib/userSession";
 
 // Fares based on NTC ordinary bus tariff 2024/2025 (~LKR 2.60/km)
 // Semi-luxury ~40% above ordinary

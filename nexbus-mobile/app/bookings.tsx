@@ -13,9 +13,9 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { API_URL } from "./config";
-import { getUserId } from "./userSession";
-import { useTheme } from "./themeContext";
+import { API_URL } from "../lib/config";
+import { getUserId } from "../lib/userSession";
+import { useTheme } from "../lib/themeContext";
 
 type Booking = {
   id: string;

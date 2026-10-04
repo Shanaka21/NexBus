@@ -7,8 +7,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
-import { API_URL } from "./config";
-import { useTheme } from "./themeContext";
+import { API_URL } from "../lib/config";
+import { useTheme } from "../lib/themeContext";
 
 const FAVORITES_KEY = "nexbus_favorite_routes";
 

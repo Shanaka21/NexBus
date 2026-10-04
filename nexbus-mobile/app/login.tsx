@@ -15,9 +15,9 @@ import { Stack, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Google from "expo-auth-session/providers/google";
 import * as WebBrowser from "expo-web-browser";
-import { API_URL } from "./config";
-import { setUserSession } from "./userSession";
-import { useTheme } from "./themeContext";
+import { API_URL } from "../lib/config";
+import { setUserSession } from "../lib/userSession";
+import { useTheme } from "../lib/themeContext";
 
 WebBrowser.maybeCompleteAuthSession();
 

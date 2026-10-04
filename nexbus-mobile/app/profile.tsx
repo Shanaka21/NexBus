@@ -8,9 +8,9 @@ import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { getUserId, getUserName, getUserEmail, setUserName } from "./userSession";
-import { API_URL } from "./config";
-import { useTheme } from "./themeContext";
+import { getUserId, getUserName, getUserEmail, setUserName } from "../lib/userSession";
+import { API_URL } from "../lib/config";
+import { useTheme } from "../lib/themeContext";
 
 const AVATAR_KEY = "nexbus_avatar_uri";
 

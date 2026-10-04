@@ -7,8 +7,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { getUserName, getUserEmail, clearSession } from "./userSession";
-import { useTheme } from "./themeContext";
+import { getUserName, getUserEmail, clearSession } from "../lib/userSession";
+import { useTheme } from "../lib/themeContext";
 
 const AVATAR_KEY = "nexbus_avatar_uri";
 

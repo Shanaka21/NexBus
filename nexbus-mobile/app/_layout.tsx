@@ -2,7 +2,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 
-import { ThemeProvider, useTheme } from './themeContext';
+import { ThemeProvider, useTheme } from '../lib/themeContext';
 
 export const unstable_settings = {
   anchor: '(tabs)',

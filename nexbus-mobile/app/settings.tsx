@@ -6,8 +6,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { clearSession } from "./userSession";
-import { useTheme } from "./themeContext";
+import { clearSession } from "../lib/userSession";
+import { useTheme } from "../lib/themeContext";
 
 const light = {
   bg:       "#f0f0f5",
