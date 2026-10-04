@@ -9,7 +9,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getUserId, getUserName, getUserEmail, setUserName } from "../lib/userSession";
-import { API_URL } from "../lib/config";
+import { apiJson, jsonBody } from "../lib/api";
 import { useTheme } from "../lib/themeContext";
 
 const AVATAR_KEY = "nexbus_avatar_uri";
@@ -67,10 +67,9 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     if (!uid) return;
-    fetch(`${API_URL}/bookings?user_id=${uid}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (!Array.isArray(data)) return;
+    apiJson("/bookings/me")
+      .then(({ ok, data }) => {
+        if (!ok || !Array.isArray(data)) return;
         setStats({
           total:     data.length,
           confirmed: data.filter((b) => b.status === "confirmed").length,
@@ -80,10 +79,9 @@ export default function ProfileScreen() {
       })
       .catch(() => {});
 
-    fetch(`${API_URL}/auth/${uid}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.uid) {
+    apiJson("/users/me")
+      .then(({ ok, data }) => {
+        if (ok && data.uid) {
           const pr = { phone: data.phone || "", region: data.region || "Sri Lanka", role: data.role || "passenger" };
           setProfile(pr);
           setEditPhone(pr.phone);
@@ -130,13 +128,11 @@ export default function ProfileScreen() {
     if (!uid) return;
     setSaving(true);
     try {
-      const res = await fetch(`${API_URL}/auth/${uid}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: editName, phone: editPhone, region: editRegion }),
+      const { ok, data } = await apiJson("/users/me", {
+        method: "PATCH",
+        ...jsonBody({ full_name: editName, phone: editPhone, region: editRegion }),
       });
-      const data = await res.json();
-      if (res.ok) {
+      if (ok) {
         setProfile((prev) => ({ ...prev, phone: editPhone, region: editRegion }));
         setDisplayName(editName);
         setUserName(editName);

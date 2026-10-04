@@ -1,93 +1,53 @@
 const express = require('express');
 const router = express.Router();
-const admin = require('firebase-admin');
+const authenticate = require('../middleware/auth');
+const validate = require('../middleware/validate');
+const { strict } = require('../middleware/rateLimit');
+const { AppError } = require('../utils/errors');
+const schemas = require('../schemas');
+const authService = require('../services/auth.service');
+const userService = require('../services/user.service');
+const audit = require('../services/audit.service');
 
-const FIREBASE_API_KEY = process.env.FIREBASE_API_KEY;
-console.log('FIREBASE_API_KEY loaded:', FIREBASE_API_KEY ? 'YES' : 'MISSING');
-
-// Register
-router.post('/register', async (req, res) => {
-  const { name, email, password } = req.body;
-  if (!name || !email || !password) {
-    return res.status(400).json({ error: 'name, email, and password are required' });
-  }
-  try {
-    const user = await admin.auth().createUser({ email, password, displayName: name });
-    await admin.firestore().collection('users').doc(user.uid).set({
-      name,
-      email,
-      role: 'passenger',
-      created_at: Date.now()
-    });
-    res.json({ message: 'User registered successfully', uid: user.uid, name, email });
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
+router.post('/register', strict, validate(schemas.register), async (req, res) => {
+  const { full_name: fullName, name, email, phone, password } = req.valid.body;
+  const user = await userService.createAccount({ email, password, phone, full_name: fullName || name, role: 'passenger' });
+  await audit.log({ userId: user.uid, action: 'REGISTER', entity: 'users', entityId: user.uid });
+  res.status(201).json({ message: 'User registered successfully', uid: user.uid, name: user.full_name, email, role: 'passenger' });
 });
 
-// Login — verifies password via Firebase Auth REST API
-router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: 'email and password are required' });
-  }
-  try {
-    const authRes = await fetch(
-      `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, returnSecureToken: true })
-      }
-    );
-    const authData = await authRes.json();
-    console.log('Firebase Auth response:', JSON.stringify(authData));
-    if (authData.error) {
-      return res.status(401).json({ error: 'Invalid email or password' });
-    }
-
-    const userDoc = await admin.firestore().collection('users').doc(authData.localId).get();
-    const userData = userDoc.data() || {};
-    res.json({
-      message: 'Login successful',
-      uid: authData.localId,
-      name: userData.name || authData.displayName || 'User',
-      email: authData.email
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+router.post('/login', strict, validate(schemas.login), async (req, res) => {
+  res.json(await authService.login(req.valid.body.email, req.valid.body.password));
 });
 
-// Get user profile
-router.get('/:uid', async (req, res) => {
-  const { uid } = req.params;
-  try {
-    const userDoc = await admin.firestore().collection('users').doc(uid).get();
-    if (!userDoc.exists) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    const data = userDoc.data();
-    res.json({ uid: userDoc.id, ...data });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+router.post('/refresh', validate(schemas.refresh), async (req, res) => {
+  res.json(await authService.refresh(req.valid.body.refresh_token));
 });
 
-// Update user profile
-router.put('/:uid', async (req, res) => {
-  const { uid } = req.params;
-  const { name, phone, region } = req.body;
-  try {
-    const updates = {};
-    if (name)   updates.name   = name;
-    if (phone)  updates.phone  = phone;
-    if (region) updates.region = region;
-    await admin.firestore().collection('users').doc(uid).set(updates, { merge: true });
-    res.json({ message: 'Profile updated' });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+router.post('/forgot-password', strict, validate(schemas.forgotPassword), async (req, res) => {
+  res.json(await authService.forgotPassword(req.valid.body.email));
+});
+
+// A fresh custom token for the signed-in user, so clients that only hold an ID/refresh token can reopen
+// their read-only Firestore listeners after a page reload
+router.get('/firebase-token', authenticate, async (req, res) => {
+  res.json({ customToken: await authService.firebaseToken(req.user) });
+});
+
+// Legacy profile endpoints (kept for the existing mobile screens); new code should use /users/me
+router.get('/:uid', authenticate, async (req, res) => {
+  if (req.params.uid !== req.user.uid && req.user.role !== 'admin') {
+    throw new AppError(403, 'FORBIDDEN', 'You can read only your own profile');
   }
+  res.json(await userService.getProfile(req.params.uid));
+});
+
+router.put('/:uid', authenticate, validate(schemas.profilePatch), async (req, res) => {
+  if (req.params.uid !== req.user.uid) throw new AppError(403, 'FORBIDDEN', 'You can update only your own profile');
+  const patch = { ...req.valid.body };
+  if (patch.name && !patch.full_name) patch.full_name = patch.name;
+  await userService.updateProfile(req.user.uid, patch);
+  res.json({ message: 'Profile updated' });
 });
 
 module.exports = router;

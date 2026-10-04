@@ -7,7 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
-import { API_URL } from "../lib/config";
+import { apiJson } from "../lib/api";
 import { useTheme } from "../lib/themeContext";
 
 const FAVORITES_KEY = "nexbus_favorite_routes";
@@ -71,15 +71,15 @@ export default function RoutesScreen() {
   const tabs = ["All Routes", "Favorites", "Nearby"];
 
   useEffect(() => {
-    fetch(`${API_URL}/buses`)
-      .then((r) => r.json())
-      .then((data) => {
+    apiJson("/buses")
+      .then(({ ok, data }) => {
+        if (!ok || !Array.isArray(data)) return;
         const mapped: Bus[] = data.map((item: any) => ({
           id:          item.id,
           route:       item.route_number,
           destination: item.end_point   || item.route_number,
           from:        item.start_point || "—",
-          status:      item.status === "delayed" ? "DELAYED" : "ON TIME",
+          status:      item.status === "delayed" || item.live_status === "delayed" ? "DELAYED" : "ON TIME",
         }));
         setBuses(mapped);
       })

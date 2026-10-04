@@ -1,0 +1,58 @@
+const s = require('../schemas');
+
+const ok = (schema, value) => expect(schema.validate(value).error).toBeUndefined();
+const bad = (schema, value) => expect(schema.validate(value).error).toBeDefined();
+
+describe('booking request (TC19, TC20)', () => {
+  const base = { trip_id: 'trip1', boarding_stop_id: 'pettah', alighting_stop_id: 'nugegoda', seat_count: 2 };
+
+  test('valid request', () => ok(s.booking, base));
+  test.each([0, 5, 2.5, 'two'])('seat_count %p is rejected', (n) => bad(s.booking, { ...base, seat_count: n }));
+  test('same boarding and alighting stop is rejected', () => bad(s.booking, { ...base, alighting_stop_id: 'pettah' }));
+  test('path-like ids are rejected', () => bad(s.booking, { ...base, trip_id: '../../users' }));
+  test('very long ids are rejected', () => bad(s.booking, { ...base, trip_id: 'a'.repeat(500) }));
+});
+
+describe('location fix (TC10, TC11)', () => {
+  const base = { trip_id: 'trip1', lat: 6.93, lng: 79.85, speed_kmh: 20, accuracy_m: 8 };
+
+  test('valid fix', () => ok(s.location, base));
+  test('latitude 95 is rejected', () => bad(s.location, { ...base, lat: 95 }));
+  test('longitude -200 is rejected', () => bad(s.location, { ...base, lng: -200 }));
+  test('text coordinates are rejected', () => bad(s.location, { ...base, lat: 'north' }));
+  test('accuracy is required', () => bad(s.location, { trip_id: 'trip1', lat: 6.9, lng: 79.8 }));
+});
+
+describe('registration and login', () => {
+  test('valid registration', () => ok(s.register, { full_name: 'Nimal Perera', email: 'nimal@example.com', phone: '0771234567', password: 'secret1' }));
+  test('older clients can send name', () => ok(s.register, { name: 'Nimal Perera', email: 'nimal@example.com', password: 'secret1' }));
+  test.each(['user@', '', 'not an email'])('email %p is rejected', (email) => bad(s.register, { full_name: 'Nimal', email, password: 'secret1' }));
+  test('short password is rejected', () => bad(s.register, { full_name: 'Nimal', email: 'a@b.lk', password: '123' }));
+  test('login needs email and password', () => bad(s.login, { email: 'a@b.lk' }));
+});
+
+describe('route and vehicle (TC07)', () => {
+  const route = { route_number: '138', base_fare_lkr: 120, estimated_duration_min: 95, stop_ids: ['a', 'b'] };
+
+  test('valid route', () => ok(s.route, route));
+  test('fewer than 2 stops is rejected', () => bad(s.route, { ...route, stop_ids: ['a'] }));
+  test('negative fare is rejected', () => bad(s.route, { ...route, base_fare_lkr: -5 }));
+
+  const vehicle = { registration_no: 'NB-4521', route_id: 'r138', seat_capacity: 54, reservable_seats: 20 };
+  test('valid vehicle', () => ok(s.vehicle, vehicle));
+  test('reservable seats above capacity is rejected', () => bad(s.vehicle, { ...vehicle, reservable_seats: 60 }));
+});
+
+describe('PayHere notification (TC27 inputs)', () => {
+  const n = { merchant_id: '1', order_id: 'o', payhere_amount: '10.00', payhere_currency: 'LKR', status_code: '2', md5sig: 'x' };
+  test('valid', () => ok(s.payhereNotify, n));
+  test('missing md5sig is rejected', () => bad(s.payhereNotify, { ...n, md5sig: undefined }));
+  test('non-numeric status code is rejected', () => bad(s.payhereNotify, { ...n, status_code: 'abc' }));
+});
+
+describe('admin user', () => {
+  const base = { full_name: 'Op User', email: 'op@x.lk', password: 'secret1' };
+  test('operator account needs a company', () => bad(s.adminUser, { ...base, role: 'operator' }));
+  test('operator with company is valid', () => ok(s.adminUser, { ...base, role: 'operator', operator_id: 'op-city' }));
+  test('admin must not carry a company', () => bad(s.adminUser, { ...base, role: 'admin', operator_id: 'op-city' }));
+});

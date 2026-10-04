@@ -9,55 +9,25 @@ import {
   TextInput,
   FlatList,
   Linking,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
-import { API_URL } from "../lib/config";
-import { getUserId } from "../lib/userSession";
+import { apiJson } from "../lib/api";
+import { stopLabel, LIVE_STATUS, secondsAgo } from "../lib/format";
 import { useTheme } from "../lib/themeContext";
 
-type BusStop = { name: string; lat: number; lng: number };
+type ApiStop = { id: string; name: string; name_si?: string; latitude: number; longitude: number };
 
-const BUS_STOPS: BusStop[] = [
-  { name: "Colombo Fort Bus Stand",   lat: 6.9339, lng: 79.8477 },
-  { name: "Pettah Central Bus Stand", lat: 6.9374, lng: 79.8508 },
-  { name: "Bambalapitiya Bus Stop",   lat: 6.8882, lng: 79.8551 },
-  { name: "Kollupitiya Bus Stop",     lat: 6.8913, lng: 79.8516 },
-  { name: "Wellawatte Bus Stop",      lat: 6.8704, lng: 79.8598 },
-  { name: "Dehiwala Bus Stand",       lat: 6.8521, lng: 79.8650 },
-  { name: "Mount Lavinia Bus Stand",  lat: 6.8310, lng: 79.8680 },
-  { name: "Moratuwa Bus Stand",       lat: 6.7736, lng: 79.8828 },
-  { name: "Panadura Bus Stand",       lat: 6.7141, lng: 79.9003 },
-  { name: "Nugegoda Bus Stand",       lat: 6.8720, lng: 79.8990 },
-  { name: "Maharagama Bus Stand",     lat: 6.8484, lng: 79.9262 },
-  { name: "Kottawa Bus Stand",        lat: 6.8370, lng: 79.9710 },
-  { name: "Homagama Bus Stand",       lat: 6.8398, lng: 80.0022 },
-  { name: "Rajagiriya Bus Stand",     lat: 6.9079, lng: 79.9010 },
-  { name: "Battaramulla Bus Stand",   lat: 6.9023, lng: 79.9212 },
-  { name: "Kaduwela Bus Stand",       lat: 6.9382, lng: 79.9901 },
-  { name: "Kelaniya Bus Stand",       lat: 6.9548, lng: 79.9224 },
-  { name: "Wattala Bus Stand",        lat: 7.0692, lng: 79.9049 },
-  { name: "Negombo Bus Stand",        lat: 7.2084, lng: 79.8374 },
-  { name: "Galle Bus Stand",          lat: 6.0535, lng: 80.2209 },
-  { name: "Kandy Bus Stand",          lat: 7.2906, lng: 80.6337 },
-  { name: "Kurunegala Bus Stand",     lat: 7.4867, lng: 80.3647 },
-  { name: "Avissawella Bus Stand",    lat: 6.9491, lng: 80.2135 },
-  { name: "Nittambuwa Bus Stand",     lat: 7.0533, lng: 80.0955 },
-];
+type Arrival = {
+  trip_id: string; route_number: string; destination: string; registration_no: string;
+  eta_min: number; status: string; delay_minutes: number; updated_seconds_ago: number | null;
+  reservable_seats: number; available_seats: number;
+};
 
-function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * (Math.PI / 180);
-  const dLon = (lon2 - lon1) * (Math.PI / 180);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * (Math.PI / 180)) *
-    Math.cos(lat2 * (Math.PI / 180)) *
-    Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
+type QuickRoute = { id: string; number: string; from: string; to: string };
 
 type Bus = {
   id: string;
@@ -79,21 +49,6 @@ type Booking = {
   status: string;
   fare: string;
 };
-
-const QUICK_ROUTES = [
-  { number: "48",  from: "Fort",     to: "Kandy" },
-  { number: "17",  from: "Pettah",   to: "Kottawa" },
-  { number: "05",  from: "Fort",     to: "Moratuwa" },
-  { number: "01",  from: "Fort",     to: "Galle" },
-  { number: "06",  from: "Fort",     to: "Dehiwala" },
-  { number: "100", from: "Fort",     to: "Kurunegala" },
-  { number: "138", from: "Fort",     to: "Maharagama" },
-  { number: "187", from: "Fort",     to: "Battaramulla" },
-  { number: "14",  from: "Pettah",   to: "Kelaniya" },
-  { number: "122", from: "Pettah",   to: "Avissawella" },
-  { number: "400", from: "Fort",     to: "Negombo" },
-  { number: "177", from: "Kaduwela", to: "Kollupitiya" },
-];
 
 const light = {
   bg:               "#f0f0f5",
@@ -142,52 +97,71 @@ export default function HomeScreen() {
   const [buses, setBuses]   = useState<Bus[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
 
-  type NearestStop = { stop: BusStop; distanceM: number };
+  type NearestStop = { stop: ApiStop; distanceM: number };
   const [nearestStop, setNearestStop] = useState<NearestStop | null>(null);
+  const [arrivals, setArrivals] = useState<Arrival[]>([]);
   const [stopLoading, setStopLoading] = useState(false);
+  const [unread, setUnread] = useState(0);
+  const [quickRoutes, setQuickRoutes] = useState<QuickRoute[]>([]);
+
+  const loadArrivals = async (stopId: string) => {
+    try {
+      const { ok, data } = await apiJson(`/stops/${stopId}/arrivals`);
+      if (ok && Array.isArray(data)) setArrivals(data.slice(0, 4));
+    } catch { /* keep the last arrivals */ }
+  };
 
   const findNearestStop = async () => {
     setStopLoading(true);
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") { setStopLoading(false); return; }
+      if (status !== "granted") return;
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       const { latitude, longitude } = loc.coords;
-      let nearest = BUS_STOPS[0];
-      let minKm   = haversineKm(latitude, longitude, BUS_STOPS[0].lat, BUS_STOPS[0].lng);
-      for (const stop of BUS_STOPS.slice(1)) {
-        const km = haversineKm(latitude, longitude, stop.lat, stop.lng);
-        if (km < minKm) { minKm = km; nearest = stop; }
+      // The position is only used for this query and is never stored by the server
+      const { ok, data } = await apiJson(`/stops?near=${latitude},${longitude}&limit=1`);
+      if (ok && data[0]) {
+        setNearestStop({ stop: data[0], distanceM: Math.round(data[0].distance_km * 1000) });
+        loadArrivals(data[0].id);
       }
-      setNearestStop({ stop: nearest, distanceM: Math.round(minKm * 1000) });
     } catch { /* silently fail */ }
     setStopLoading(false);
   };
 
   const openDirections = () => {
     if (!nearestStop) return;
-    const { lat, lng } = nearestStop.stop;
-    Linking.openURL(`maps://?daddr=${lat},${lng}&dirflg=w`);
+    const { latitude, longitude } = nearestStop.stop;
+    const url = Platform.OS === "ios"
+      ? `maps://?daddr=${latitude},${longitude}&dirflg=w`
+      : `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}&travelmode=walking`;
+    Linking.openURL(url);
   };
 
   useEffect(() => {
-    fetch(`${API_URL}/buses`)
-      .then((r) => r.json())
-      .then((d) => setBuses(d))
-      .catch(() => {});
+    findNearestStop(); // the nearest stop and its next buses are shown as soon as the home screen opens
 
-    const uid = getUserId();
-    if (uid) {
-      fetch(`${API_URL}/bookings?user_id=${uid}`)
-        .then((r) => r.json())
-        .then((d) => setBookings(Array.isArray(d) ? d : []))
-        .catch(() => {});
-    }
+    apiJson("/buses").then(({ ok, data }) => { if (ok && Array.isArray(data)) setBuses(data); }).catch(() => {});
+    apiJson("/bookings/me").then(({ ok, data }) => { if (ok && Array.isArray(data)) setBookings(data); }).catch(() => {});
+    apiJson("/notifications/me").then(({ ok, data }) => {
+      if (ok && Array.isArray(data)) setUnread(data.filter((n: any) => !n.is_read).length);
+    }).catch(() => {});
+    apiJson("/routes").then(({ ok, data }) => {
+      if (ok && Array.isArray(data)) {
+        setQuickRoutes(data.slice(0, 12).map((r: any) => ({ id: r.id, number: r.route_number, from: r.start_point, to: r.end_point })));
+      }
+    }).catch(() => {});
   }, []);
+
+  // Arrival times change as buses move
+  useEffect(() => {
+    if (!nearestStop) return;
+    const timer = setInterval(() => loadArrivals(nearestStop.stop.id), 30000);
+    return () => clearInterval(timer);
+  }, [nearestStop]);
 
   const activeBooking = bookings.find((b) => b.status === "confirmed") ?? null;
   const recentRoutes  = bookings.slice(0, 3);
-  const notifCount    = bookings.filter((b) => b.status === "confirmed").length;
+  const notifCount    = unread;
 
   const results =
     searchText.trim().length === 0
@@ -405,11 +379,11 @@ export default function HomeScreen() {
             style={styles.quickBookScroll}
             contentContainerStyle={{ gap: 10, paddingRight: 4 }}
           >
-            {QUICK_ROUTES.map((route) => (
+            {quickRoutes.map((route) => (
               <TouchableOpacity
-                key={route.number}
+                key={route.id}
                 style={[styles.quickChip, { backgroundColor: p.card }]}
-                onPress={() => router.push("/newbooking" as any)}
+                onPress={() => router.push({ pathname: "/newbooking", params: { route_id: route.id } } as any)}
               >
                 <View style={[styles.quickChipIcon, { backgroundColor: p.iconBox }]}>
                   <Ionicons name="bus" size={18} color="#1a3cff" />
@@ -429,7 +403,7 @@ export default function HomeScreen() {
                 <Text style={[styles.cardTitle, { color: p.text }]}>Nearest Bus Stop</Text>
                 <Text style={styles.cardSubtitle} numberOfLines={1}>
                   {nearestStop
-                    ? `${nearestStop.stop.name} (${nearestStop.distanceM < 1000
+                    ? `${stopLabel(nearestStop.stop)} (${nearestStop.distanceM < 1000
                         ? `${nearestStop.distanceM}m`
                         : `${(nearestStop.distanceM / 1000).toFixed(1)}km`})`
                     : "Tap to find your nearest stop"}
@@ -448,7 +422,7 @@ export default function HomeScreen() {
               {nearestStop ? (
                 <>
                   <Ionicons name="location" size={44} color="#1a3cff" opacity={0.6} />
-                  <Text style={styles.stopFoundText}>{nearestStop.stop.name}</Text>
+                  <Text style={styles.stopFoundText}>{stopLabel(nearestStop.stop)}</Text>
                 </>
               ) : (
                 <>
@@ -466,7 +440,7 @@ export default function HomeScreen() {
                 onPress={openDirections}
               >
                 <Ionicons name="navigate" size={16} color="#1a3cff" />
-                <Text style={styles.directionsText}>Open in Apple Maps</Text>
+                <Text style={styles.directionsText}>Open in Maps</Text>
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
@@ -481,6 +455,38 @@ export default function HomeScreen() {
               </TouchableOpacity>
             )}
           </View>
+
+          {/* ── Next buses at the nearest stop ── */}
+          {nearestStop && (
+            <View style={[styles.card, { backgroundColor: p.card }]}>
+              <Text style={[styles.cardTitle, { color: p.text }]}>Next buses</Text>
+              <Text style={[styles.cardSubtitle, { marginBottom: 10 }]} numberOfLines={1}>at {nearestStop.stop.name}</Text>
+              {arrivals.length === 0 && (
+                <Text style={styles.arrivalSub}>No buses are expected here soon.</Text>
+              )}
+              {arrivals.map((a) => {
+                const st = LIVE_STATUS[a.status] || LIVE_STATUS.scheduled;
+                return (
+                  <TouchableOpacity key={a.trip_id} style={styles.arrivalRow} onPress={() => router.push("/map")}>
+                    <View style={[styles.arrivalBadge, { backgroundColor: p.iconBox }]}>
+                      <Text style={styles.arrivalBadgeText}>{a.route_number}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.arrivalTitle, { color: p.text }]} numberOfLines={1}>to {a.destination}</Text>
+                      <Text style={styles.arrivalSub}>
+                        {st.label.toLowerCase()}{a.delay_minutes >= 10 ? ` · ${a.delay_minutes} min late` : ""}
+                        {a.reservable_seats > 0 ? ` · ${a.available_seats} seats` : ""}
+                        {a.updated_seconds_ago != null ? ` · ${secondsAgo(a.updated_seconds_ago)}` : ""}
+                      </Text>
+                    </View>
+                    <View style={[styles.arrivalEta, { backgroundColor: st.bg }]}>
+                      <Text style={[styles.arrivalEtaText, { color: st.color }]}>{a.eta_min} min</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
 
           {/* ── Recent Routes ── */}
           <Text style={[styles.sectionTitle, { color: p.text }]}>Recent Routes</Text>
@@ -514,7 +520,7 @@ export default function HomeScreen() {
                   </View>
                   <View style={[styles.recentStatus, { backgroundColor: statusBg }]}>
                     <Text style={[styles.recentStatusText, { color: statusColor }]}>
-                      {b.status.charAt(0).toUpperCase() + b.status.slice(1)}
+                      {b.status === "pending_payment" ? "Awaiting payment" : b.status.charAt(0).toUpperCase() + b.status.slice(1)}
                     </Text>
                   </View>
                 </TouchableOpacity>
@@ -527,8 +533,8 @@ export default function HomeScreen() {
                   <Ionicons name="time" size={20} color="#1a3cff" />
                 </View>
                 <View>
-                  <Text style={[styles.recentRoute, { color: p.text }]}>Fort → Maharagama</Text>
-                  <Text style={styles.recentSub}>Route 138 • 45 mins</Text>
+                  <Text style={[styles.recentRoute, { color: p.text }]}>No trips yet</Text>
+                  <Text style={styles.recentSub}>Your bookings will appear here</Text>
                 </View>
               </View>
               <Ionicons name="chevron-forward" size={18} color="#aaa" />
@@ -700,6 +706,14 @@ const styles = StyleSheet.create({
     borderRadius: 10, paddingVertical: 12, gap: 8,
   },
   directionsText: { fontSize: 14, color: "#1a3cff", fontWeight: "600" },
+
+  arrivalRow:       { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 8 },
+  arrivalBadge:     { minWidth: 48, paddingVertical: 8, borderRadius: 10, alignItems: "center" },
+  arrivalBadgeText: { fontSize: 15, fontWeight: "bold", color: "#1a3cff" },
+  arrivalTitle:     { fontSize: 14, fontWeight: "600" },
+  arrivalSub:       { fontSize: 12, color: "#888", marginTop: 2 },
+  arrivalEta:       { borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5 },
+  arrivalEtaText:   { fontSize: 13, fontWeight: "bold" },
 
   recentCard: {
     borderRadius: 14, padding: 14,

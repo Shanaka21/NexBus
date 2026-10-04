@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Animated, StatusBar } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { getUserId, getRole } from "../lib/userSession";
 
 export default function SplashScreen() {
   const progressAnim = useRef(new Animated.Value(0)).current;
@@ -22,7 +23,8 @@ export default function SplashScreen() {
         useNativeDriver: false,
       }),
     ]).start(() => {
-      router.replace("/login");
+      // a restored session skips the login screen
+      router.replace((getUserId() ? (getRole() === "driver" ? "/driver" : "/home") : "/login") as any);
     });
   }, [fadeAnim, progressAnim, router]);
 

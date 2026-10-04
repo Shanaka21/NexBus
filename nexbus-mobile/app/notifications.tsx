@@ -1,101 +1,70 @@
-import { useState, useEffect } from "react";
+import { useState, useCallback } from "react";
 import {
   View, Text, StyleSheet, FlatList,
-  TouchableOpacity, StatusBar,
+  TouchableOpacity, StatusBar, ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { Stack, useRouter } from "expo-router";
+import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { getUserId } from "../lib/userSession";
-import { API_URL } from "../lib/config";
+import { apiJson } from "../lib/api";
 
 type Notif = {
   id: string;
-  icon: string;
-  iconColor: string;
-  iconBg: string;
+  type: string;
   title: string;
-  body: string;
-  time: string;
-  read: boolean;
+  message: string;
+  is_read: boolean;
+  created_at: number;
+  related_booking_id?: string | null;
 };
 
-const STATIC_NOTIFS: Notif[] = [
-  {
-    id: "sys1",
-    icon: "megaphone-outline",
-    iconColor: "#1a3cff",
-    iconBg: "#f0f4ff",
-    title: "Welcome to NexBus!",
-    body: "Track buses, book rides, and travel smarter across Sri Lanka.",
-    time: "Just now",
-    read: false,
-  },
-  {
-    id: "sys2",
-    icon: "information-circle-outline",
-    iconColor: "#ff9800",
-    iconBg: "#fff3e0",
-    title: "Service Update",
-    body: "Route 138 (Fort – Maharagama) now has increased frequency on weekdays.",
-    time: "2 hrs ago",
-    read: true,
-  },
-  {
-    id: "sys3",
-    icon: "shield-checkmark-outline",
-    iconColor: "#4caf50",
-    iconBg: "#e8f5e9",
-    title: "Account Verified",
-    body: "Your NexBus passenger account is active and ready to use.",
-    time: "Yesterday",
-    read: true,
-  },
-];
+// Icon, colours and screen to open for each notification type
+const STYLE: Record<string, { icon: string; color: string; bg: string }> = {
+  booking_confirmed: { icon: "checkmark-circle-outline", color: "#4caf50", bg: "#e8f5e9" },
+  booking_cancelled: { icon: "close-circle-outline", color: "#f44336", bg: "#ffebee" },
+  booking_expired:   { icon: "time-outline", color: "#9e9e9e", bg: "#eeeeee" },
+  payment_failed:    { icon: "card-outline", color: "#f44336", bg: "#ffebee" },
+  delay_alert:       { icon: "alert-circle-outline", color: "#ff9800", bg: "#fff3e0" },
+  trip_cancelled:    { icon: "bus-outline", color: "#f44336", bg: "#ffebee" },
+};
+const FALLBACK = { icon: "megaphone-outline", color: "#1a3cff", bg: "#f0f4ff" };
+
+function ago(ms: number): string {
+  const minutes = Math.round((Date.now() - ms) / 60000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  if (minutes < 1440) return `${Math.round(minutes / 60)} hr ago`;
+  return new Date(ms).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+}
 
 export default function NotificationsScreen() {
   const router = useRouter();
   const [notifs, setNotifs] = useState<Notif[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const uid = getUserId();
-    if (!uid) { setNotifs(STATIC_NOTIFS); return; }
+  useFocusEffect(
+    useCallback(() => {
+      apiJson("/notifications/me")
+        .then(({ ok, data }) => setNotifs(ok && Array.isArray(data) ? data : []))
+        .catch(() => setNotifs([]))
+        .finally(() => setLoading(false));
+    }, [])
+  );
 
-    fetch(`${API_URL}/bookings?user_id=${uid}`)
-      .then((r) => r.json())
-      .then((data: any[]) => {
-        if (!Array.isArray(data)) { setNotifs(STATIC_NOTIFS); return; }
+  const unreadCount = notifs.filter((n) => !n.is_read).length;
 
-        const bookingNotifs: Notif[] = data.slice(0, 5).map((b) => {
-          const isConfirmed  = b.status === "confirmed";
-          const isCancelled  = b.status === "cancelled";
-          const isCompleted  = b.status === "completed";
-          return {
-            id: `booking-${b.id}`,
-            icon: isConfirmed  ? "checkmark-circle-outline"
-                : isCancelled  ? "close-circle-outline"
-                : "checkmark-done-outline",
-            iconColor: isConfirmed  ? "#4caf50"
-                     : isCancelled  ? "#f44336"
-                     : "#1a3cff",
-            iconBg:    isConfirmed  ? "#e8f5e9"
-                     : isCancelled  ? "#ffebee"
-                     : "#e3f2fd",
-            title: isConfirmed  ? "Booking Confirmed"
-                 : isCancelled  ? "Booking Cancelled"
-                 : "Trip Completed",
-            body: `Route ${b.route} · ${b.from} → ${b.to} · ${b.time} · ${b.fare}`,
-            time: b.date,
-            read: isCompleted || isCancelled,
-          };
-        });
+  const open = (item: Notif) => {
+    if (!item.is_read) {
+      setNotifs((prev) => prev.map((n) => (n.id === item.id ? { ...n, is_read: true } : n)));
+      apiJson(`/notifications/${item.id}/read`, { method: "PATCH" }).catch(() => {});
+    }
+    if (item.related_booking_id) router.push("/bookings");
+  };
 
-        setNotifs([...bookingNotifs, ...STATIC_NOTIFS]);
-      })
-      .catch(() => setNotifs(STATIC_NOTIFS));
-  }, []);
-
-  const unreadCount = notifs.filter((n) => !n.read).length;
+  const markAll = () => {
+    setNotifs((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    apiJson("/notifications/read-all", { method: "PATCH" }).catch(() => {});
+  };
 
   return (
     <View style={styles.container}>
@@ -114,43 +83,42 @@ export default function NotificationsScreen() {
             </View>
           )}
         </View>
-        <View style={{ width: 24 }} />
+        <TouchableOpacity onPress={markAll} disabled={unreadCount === 0}>
+          <Ionicons name="checkmark-done" size={24} color={unreadCount === 0 ? "rgba(255,255,255,0.4)" : "#fff"} />
+        </TouchableOpacity>
       </LinearGradient>
 
-      <FlatList
-        data={notifs}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
-        ListEmptyComponent={
-          <View style={styles.emptyBox}>
-            <Ionicons name="notifications-off-outline" size={48} color="#ccc" />
-            <Text style={styles.emptyText}>No notifications yet</Text>
-          </View>
-        }
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={[styles.card, !item.read && styles.cardUnread]}
-            activeOpacity={0.85}
-            onPress={() => {
-              if (!item.read) {
-                setNotifs((prev) =>
-                  prev.map((n) => n.id === item.id ? { ...n, read: true } : n)
-                );
-              }
-            }}
-          >
-            {!item.read && <View style={styles.unreadDot} />}
-            <View style={[styles.iconBox, { backgroundColor: item.iconBg }]}>
-              <Ionicons name={item.icon as any} size={22} color={item.iconColor} />
+      {loading ? (
+        <ActivityIndicator size="large" color="#1a3cff" style={{ marginTop: 40 }} />
+      ) : (
+        <FlatList
+          data={notifs}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.list}
+          ListEmptyComponent={
+            <View style={styles.emptyBox}>
+              <Ionicons name="notifications-off-outline" size={48} color="#ccc" />
+              <Text style={styles.emptyText}>No notifications yet</Text>
             </View>
-            <View style={styles.cardContent}>
-              <Text style={styles.cardTitle}>{item.title}</Text>
-              <Text style={styles.cardBody}>{item.body}</Text>
-              <Text style={styles.cardTime}>{item.time}</Text>
-            </View>
-          </TouchableOpacity>
-        )}
-      />
+          }
+          renderItem={({ item }) => {
+            const s = STYLE[item.type] || FALLBACK;
+            return (
+              <TouchableOpacity style={[styles.card, !item.is_read && styles.cardUnread]} activeOpacity={0.85} onPress={() => open(item)}>
+                {!item.is_read && <View style={styles.unreadDot} />}
+                <View style={[styles.iconBox, { backgroundColor: s.bg }]}>
+                  <Ionicons name={s.icon as any} size={22} color={s.color} />
+                </View>
+                <View style={styles.cardContent}>
+                  <Text style={styles.cardTitle}>{item.title}</Text>
+                  <Text style={styles.cardBody}>{item.message}</Text>
+                  <Text style={styles.cardTime}>{ago(item.created_at)}</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          }}
+        />
+      )}
     </View>
   );
 }
@@ -163,10 +131,7 @@ const styles = StyleSheet.create({
   },
   headerCenter: { flexDirection: "row", alignItems: "center", gap: 10 },
   headerTitle: { fontSize: 20, fontWeight: "bold", color: "#fff" },
-  headerBadge: {
-    backgroundColor: "rgba(255,255,255,0.25)", borderRadius: 20,
-    paddingHorizontal: 10, paddingVertical: 3,
-  },
+  headerBadge: { backgroundColor: "rgba(255,255,255,0.25)", borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3 },
   headerBadgeText: { fontSize: 12, color: "#fff", fontWeight: "600" },
 
   list: { padding: 16, paddingBottom: 40 },
@@ -179,15 +144,8 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   cardUnread: { borderLeftWidth: 3, borderLeftColor: "#1a3cff" },
-  unreadDot: {
-    position: "absolute", top: 14, right: 14,
-    width: 8, height: 8, borderRadius: 4, backgroundColor: "#1a3cff",
-  },
-  iconBox: {
-    width: 44, height: 44, borderRadius: 12,
-    alignItems: "center", justifyContent: "center",
-    flexShrink: 0,
-  },
+  unreadDot: { position: "absolute", top: 14, right: 14, width: 8, height: 8, borderRadius: 4, backgroundColor: "#1a3cff" },
+  iconBox: { width: 44, height: 44, borderRadius: 12, alignItems: "center", justifyContent: "center", flexShrink: 0 },
   cardContent: { flex: 1 },
   cardTitle: { fontSize: 14, fontWeight: "700", color: "#1a1a4e", marginBottom: 4 },
   cardBody:  { fontSize: 13, color: "#666", lineHeight: 18, marginBottom: 6 },

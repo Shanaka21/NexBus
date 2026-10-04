@@ -16,7 +16,11 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as Google from "expo-auth-session/providers/google";
 import * as WebBrowser from "expo-web-browser";
 import { API_URL } from "../lib/config";
-import { setUserSession } from "../lib/userSession";
+import { apiFetch } from "../lib/api";
+import { setUserSession, clearSession } from "../lib/userSession";
+import { signInFirebase, firebaseIdTokenFromGoogle } from "../lib/firebaseSession";
+import { registerForPush } from "../lib/push";
+import { saveSession } from "../lib/sessionStore";
 import { useTheme } from "../lib/themeContext";
 
 WebBrowser.maybeCompleteAuthSession();
@@ -82,15 +86,22 @@ export default function LoginScreen() {
       const token = response.authentication?.accessToken;
       if (!token) return;
       setGoogleLoading(true);
-      fetch("https://www.googleapis.com/userinfo/v2/me", {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-        .then((r) => r.json())
-        .then((user) => {
-          setUserSession(user.id, user.name || "User", user.email || "");
+      // The Google token is exchanged for a Firebase session so the API accepts the user like any other account
+      firebaseIdTokenFromGoogle(token)
+        .then(async (user) => {
+          setUserSession(user.uid, user.name || "User", user.email || "", {
+            role: "passenger", idToken: user.idToken, refreshToken: user.refreshToken,
+          });
+          const profile = await apiFetch("/users/me"); // creates the passenger profile on first sign-in
+          if (!profile.ok) throw new Error("profile");
+          registerForPush();
+          await saveSession();
           router.replace("/home");
         })
-        .catch(() => Alert.alert("Error", "Could not fetch Google profile."))
+        .catch(() => {
+          clearSession();
+          Alert.alert("Error", "Google Sign-In could not be completed. Please sign in with your email.");
+        })
         .finally(() => setGoogleLoading(false));
     } else if (response?.type === "error") {
       Alert.alert("Error", "Google Sign-In failed. Please try again.");
@@ -109,14 +120,41 @@ export default function LoginScreen() {
         body: JSON.stringify({ email, password }),
       });
       const data = await res.json();
-      if (data.uid) {
-        setUserSession(data.uid, data.name, data.email);
-        router.replace("/home");
+      if (data.uid && data.idToken) {
+        if (data.role === "operator" || data.role === "admin") {
+          Alert.alert("Use the web dashboard", "Operator and administrator accounts are managed in the NexBus web dashboard.");
+          return;
+        }
+        setUserSession(data.uid, data.name, data.email, {
+          role: data.role, operatorId: data.operator_id, idToken: data.idToken, refreshToken: data.refreshToken,
+        });
+        await signInFirebase(data.customToken); // enables the live map listeners
+        if (rememberMe) await saveSession();
+        registerForPush();
+        router.replace((data.role === "driver" ? "/driver" : "/home") as any);
       } else {
         Alert.alert("Error", data.error || "Login failed. Try again.");
       }
     } catch {
       Alert.alert("Error", "Login failed. Check your connection.");
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email) {
+      Alert.alert("Reset password", "Enter your email address above first, then tap Forgot password.");
+      return;
+    }
+    try {
+      const res = await fetch(`${API_URL}/auth/forgot-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      Alert.alert("Reset password", res.ok ? data.message : data.error || "Could not send the reset email.");
+    } catch {
+      Alert.alert("Error", "Could not connect to the server.");
     }
   };
 
@@ -173,7 +211,7 @@ export default function LoginScreen() {
             </View>
             <Text style={[styles.rememberText, { color: p.rememberText }]}>Remember me</Text>
           </TouchableOpacity>
-          <TouchableOpacity>
+          <TouchableOpacity onPress={handleForgotPassword}>
             <Text style={styles.forgotText}>Forgot password?</Text>
           </TouchableOpacity>
         </View>

@@ -40,3 +40,6 @@ npm-debug.log*
 # React Native
 *.jks
 *.keystore
+
+# Firebase emulator logs
+*-debug.log

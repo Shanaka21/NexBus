@@ -1,0 +1,1584 @@
+{
+  "info": {
+    "name": "NexBus API",
+    "description": "All endpoints of the NexBus REST API. Run the four Login requests first: they store the tokens used by the other requests. Set baseUrl (default http://localhost:5000; every path also works under /api).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000"
+    },
+    {
+      "key": "passengerToken",
+      "value": ""
+    },
+    {
+      "key": "driverToken",
+      "value": ""
+    },
+    {
+      "key": "operatorToken",
+      "value": ""
+    },
+    {
+      "key": "adminToken",
+      "value": ""
+    },
+    {
+      "key": "refreshToken",
+      "value": ""
+    },
+    {
+      "key": "tripId",
+      "value": ""
+    },
+    {
+      "key": "bookingId",
+      "value": ""
+    },
+    {
+      "key": "orderId",
+      "value": ""
+    },
+    {
+      "key": "driverUid",
+      "value": ""
+    },
+    {
+      "key": "userUid",
+      "value": ""
+    },
+    {
+      "key": "notificationId",
+      "value": ""
+    },
+    {
+      "key": "internalJobToken",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register passenger",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "register"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"Nimal Perera\",\n  \"email\": \"nimal@example.com\",\n  \"phone\": \"0771234567\",\n  \"password\": \"Secret@123\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login (passenger)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"demo@nexbus.lk\",\n  \"password\": \"Demo@1234\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = pm.response.json();",
+                  "pm.collectionVariables.set('passengerToken', r.idToken);",
+                  "pm.collectionVariables.set('refreshToken', r.refreshToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login (driver)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"driver@nexbus.lk\",\n  \"password\": \"Driver@1234\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = pm.response.json();",
+                  "pm.collectionVariables.set('driverToken', r.idToken);",
+                  "pm.collectionVariables.set('refreshToken', r.refreshToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login (operator)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"operator@nexbus.lk\",\n  \"password\": \"Operator@1234\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = pm.response.json();",
+                  "pm.collectionVariables.set('operatorToken', r.idToken);",
+                  "pm.collectionVariables.set('refreshToken', r.refreshToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login (admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@nexbus.lk\",\n  \"password\": \"Admin@1234\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const r = pm.response.json();",
+                  "pm.collectionVariables.set('adminToken', r.idToken);",
+                  "pm.collectionVariables.set('refreshToken', r.refreshToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "refresh"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Forgot password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/forgot-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "forgot-password"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"demo@nexbus.lk\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Firebase custom token",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{passengerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/firebase-token",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "firebase-token"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "My profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{passengerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update my profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{passengerToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "me"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"0771234567\",\n  \"preferred_language\": \"si\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Routes and stops",
+      "item": [
+        {
+          "name": "List routes",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{passengerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/routes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "routes"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get route",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{passengerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/routes/r138",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "routes",
+                "r138"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create route",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operatorToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/routes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "routes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"route_number\": \"999\",\n  \"service_type\": \"normal\",\n  \"base_fare_lkr\": 100,\n  \"estimated_duration_min\": 60,\n  \"stop_ids\": [\n    \"pettah\",\n    \"borella\",\n    \"nugegoda\"\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Update route",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operatorToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/routes/r138",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "routes",
+                "r138"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"base_fare_lkr\": 130\n}"
+            }
+          }
+        },
+        {
+          "name": "Deactivate route",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/routes/r017",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "routes",
+                "r017"
+              ]
+            }
+          }
+        },
+        {
+          "name": "List stops (nearest)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{passengerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/stops?near=6.9344,79.8428&limit=3",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stops"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create stop",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operatorToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/stops",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stops"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test stop\",\n  \"name_si\": \"පරීක්ෂණ\",\n  \"latitude\": 6.9,\n  \"longitude\": 79.9\n}"
+            }
+          }
+        },
+        {
+          "name": "Stop arrivals (ETA)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{passengerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/stops/nugegoda/arrivals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stops",
+                "nugegoda",
+                "arrivals"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Vehicles",
+      "item": [
+        {
+          "name": "Fleet (operator / admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operatorToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vehicles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vehicles"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Live fleet",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operatorToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vehicles/live",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vehicles",
+                "live"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Register vehicle",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operatorToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vehicles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vehicles"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"registration_no\": \"NB-9999\",\n  \"route_id\": \"r138\",\n  \"seat_capacity\": 54,\n  \"reservable_seats\": 20\n}"
+            }
+          }
+        },
+        {
+          "name": "Update vehicle",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operatorToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/vehicles/NB-4521",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "vehicles",
+                "NB-4521"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reservable_seats\": 24\n}"
+            }
+          }
+        },
+        {
+          "name": "Set vehicle status",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operatorToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/buses/NB-4521/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "buses",
+                "NB-4521",
+                "status"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"emergency\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Public bus list (live map)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{passengerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/buses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "buses"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Trips",
+      "item": [
+        {
+          "name": "List trips (passenger by route)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{passengerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/trips?route_id=r138",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "trips"
+              ]
+            }
+          }
+        },
+        {
+          "name": "List my trips today (driver)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{driverToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/trips",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "trips"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Schedule trip",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operatorToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/trips",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "trips"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"route_id\": \"r138\",\n  \"vehicle_id\": \"NB-4521\",\n  \"driver_id\": \"{{driverUid}}\",\n  \"scheduled_departure\": \"2026-10-10T07:00:00+05:30\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Seat availability",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{passengerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/trips/{{tripId}}/availability",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "trips",
+                "{{tripId}}",
+                "availability"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Live detail (next stops, ETA)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{passengerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/trips/{{tripId}}/live",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "trips",
+                "{{tripId}}",
+                "live"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Start trip",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{driverToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/trips/{{tripId}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "trips",
+                "{{tripId}}",
+                "status"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"running\"\n}"
+            }
+          }
+        },
+        {
+          "name": "End trip",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{driverToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/trips/{{tripId}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "trips",
+                "{{tripId}}",
+                "status"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"completed\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tracking",
+      "item": [
+        {
+          "name": "Send GPS fix",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{driverToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/location",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "location"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trip_id\": \"{{tripId}}\",\n  \"lat\": 6.9372,\n  \"lng\": 79.853,\n  \"speed_kmh\": 22,\n  \"heading\": 90,\n  \"accuracy_m\": 8\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Bookings",
+      "item": [
+        {
+          "name": "Create booking",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{passengerToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bookings"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trip_id\": \"{{tripId}}\",\n  \"boarding_stop_id\": \"pettah\",\n  \"alighting_stop_id\": \"nugegoda\",\n  \"seat_count\": 2\n}"
+            }
+          }
+        },
+        {
+          "name": "My bookings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{passengerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bookings/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bookings",
+                "me"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get booking",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{passengerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bookings/{{bookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bookings",
+                "{{bookingId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Cancel booking",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{passengerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bookings/{{bookingId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bookings",
+                "{{bookingId}}",
+                "cancel"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "Create PayHere checkout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{passengerToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/payments/checkout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "payments",
+                "checkout"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"booking_id\": \"{{bookingId}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "PayHere notify (form, signed)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/payments/notify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "payments",
+                "notify"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "merchant_id=...&order_id=...&payment_id=...&payhere_amount=240.00&payhere_currency=LKR&status_code=2&md5sig=..."
+            }
+          }
+        },
+        {
+          "name": "Sandbox simulate (PAYHERE_SIMULATE=true)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{passengerToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/payments/simulate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "payments",
+                "simulate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": \"{{orderId}}\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Decision support",
+      "item": [
+        {
+          "name": "Recommendations",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{passengerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/recommendations?from_stop_id=pettah&to_stop_id=nugegoda&need_seat=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "recommendations"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "My notifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{passengerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "me"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Mark read",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{passengerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/{{notificationId}}/read",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "{{notificationId}}",
+                "read"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Mark all read",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{passengerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/read-all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "notifications",
+                "read-all"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Operator",
+      "item": [
+        {
+          "name": "Drivers",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operatorToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/operator/drivers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operator",
+                "drivers"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create driver",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operatorToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/operator/drivers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operator",
+                "drivers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"New Driver\",\n  \"email\": \"newdriver@nexbus.lk\",\n  \"phone\": \"0712345678\",\n  \"password\": \"Driver@1234\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Bookings and payments",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operatorToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/operator/bookings?date=2026-10-04",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operator",
+                "bookings"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Daily report",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operatorToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/operator/reports?date=2026-10-04",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "operator",
+                "reports"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Overview stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operatorToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/stats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stats"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Operators",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/operators",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "operators"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Register operator",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/operators",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "operators"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"New Bus Co\",\n  \"registration_no\": \"NBC-003\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users?role=driver",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "users"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create staff account",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "users"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"New Operator\",\n  \"email\": \"newop@nexbus.lk\",\n  \"password\": \"Operator@1234\",\n  \"role\": \"operator\",\n  \"operator_id\": \"op-city\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Enable / disable user",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/users/{{userUid}}/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "users",
+                "{{userUid}}",
+                "status"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"disabled\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Audit logs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/logs?severity=security&limit=100",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "logs"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Scheduler",
+      "item": [
+        {
+          "name": "Expire unpaid holds",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-internal-token",
+                "value": "{{internalJobToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/expire-holds",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "expire-holds"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Purge old location logs",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-internal-token",
+                "value": "{{internalJobToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/internal/purge-logs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "internal",
+                "purge-logs"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

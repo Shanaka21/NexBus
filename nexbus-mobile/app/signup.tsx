@@ -14,6 +14,9 @@ import { Stack, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { API_URL } from "../lib/config";
 import { setUserSession } from "../lib/userSession";
+import { signInFirebase } from "../lib/firebaseSession";
+import { registerForPush } from "../lib/push";
+import { saveSession } from "../lib/sessionStore";
 import { useTheme } from "../lib/themeContext";
 
 const light = {
@@ -40,13 +43,14 @@ export default function SignupScreen() {
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const router = useRouter();
 
   const handleSignup = async () => {
-    if (!name || !email || !password || !confirmPassword) {
+    if (!name || !email || !phone || !password || !confirmPassword) {
       Alert.alert("Error", "Please fill in all fields");
       return;
     }
@@ -58,14 +62,32 @@ export default function SignupScreen() {
       const response = await fetch(`${API_URL}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, password }),
+        body: JSON.stringify({ full_name: name, email, phone, password }),
       });
       const data = await response.json();
       if (data.uid) {
-        setUserSession(data.uid, name, email);
-        Alert.alert("Success", "Account created!", [
-          { text: "OK", onPress: () => router.replace("/home") },
-        ]);
+        // Sign in straight away so the new passenger gets a session token
+        const login = await fetch(`${API_URL}/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+        const session = await login.json();
+        if (session.idToken) {
+          setUserSession(session.uid, session.name, session.email, {
+            role: session.role, idToken: session.idToken, refreshToken: session.refreshToken,
+          });
+          await signInFirebase(session.customToken);
+          await saveSession();
+          registerForPush();
+          Alert.alert("Success", "Account created!", [
+            { text: "OK", onPress: () => router.replace("/home") },
+          ]);
+        } else {
+          Alert.alert("Account created", "Please log in with your new account.", [
+            { text: "OK", onPress: () => router.replace("/login") },
+          ]);
+        }
       } else {
         Alert.alert("Error", data.error || "Signup failed");
       }
@@ -113,6 +135,19 @@ export default function SignupScreen() {
             onChangeText={setEmail}
             keyboardType="email-address"
             autoCapitalize="none"
+          />
+        </View>
+
+        <Text style={[styles.label, { color: p.text }]}>Phone Number</Text>
+        <View style={[styles.inputBox, { backgroundColor: p.inputBg }]}>
+          <Ionicons name="call-outline" size={18} color="#aaa" style={styles.inputIcon} />
+          <TextInput
+            style={[styles.input, { color: p.inputText }]}
+            placeholder="07X XXX XXXX"
+            placeholderTextColor="#aaa"
+            value={phone}
+            onChangeText={setPhone}
+            keyboardType="phone-pad"
           />
         </View>
 

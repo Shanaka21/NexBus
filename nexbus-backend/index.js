@@ -1,36 +1,22 @@
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const admin = require('firebase-admin');
-const serviceAccount = require('./serviceAccountKey.json');
-
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-  databaseURL: 'https://nexbus-7f898-default-rtdb.firebaseio.com'
-});
-
-const app = express();
-app.use(cors());
-app.use(express.json());
-
-// Routes
-app.use('/auth',     require('./routes/auth'));
-app.use('/buses',    require('./routes/buses'));
-app.use('/bookings', require('./routes/bookings'));
-app.use('/routes',   require('./routes/routes'));
-app.use('/stats',    require('./routes/stats'));
-
-app.get('/', (req, res) => {
-  res.send('NexBus backend is running ✅');
-});
-
-// Global error handler
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ error: 'Internal server error' });
-});
+const app = require('./app');
+const bookingService = require('./services/booking.service');
+const tracking = require('./services/tracking.service');
+const migrate = require('./services/migrate.service');
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`NexBus backend running on port ${PORT}`);
+  migrate.backfillDays()
+    .then((r) => { if (!r.skipped) console.log(`Backfilled day fields on ${r.updated} documents`); })
+    .catch((err) => console.error('backfill failed:', err.message));
 });
+
+// Local scheduler. On Cloud Run set ENABLE_JOBS=false and let Cloud Scheduler call /internal/* instead.
+if (process.env.ENABLE_JOBS !== 'false') {
+  setInterval(() => {
+    bookingService.expireHolds().catch(err => console.error('expire-holds failed:', err.message));
+  }, 60 * 1000);
+  setInterval(() => {
+    tracking.purgeOldLogs().catch(err => console.error('purge-logs failed:', err.message));
+  }, 6 * 3600 * 1000);
+}
