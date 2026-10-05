@@ -1,0 +1,16 @@
+# Set "Base directory" to nexbus-backend in the Netlify site settings
+[build]
+  functions = "netlify/functions"
+  publish = "public"
+
+[functions]
+  node_bundler = "esbuild"
+  external_node_modules = ["firebase-admin", "@google-cloud/firestore", "@grpc/grpc-js"]
+  included_files = ["firestore.rules"]
+
+# Every URL (/buses, /auth/login, /api/trips, ...) is handled by the Express app
+[[redirects]]
+  from = "/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+  force = true
