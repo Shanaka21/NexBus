@@ -17,13 +17,13 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://nexbus.netlify.app"
+        "EXPO_PUBLIC_API_URL": "https://nexbusbackend.netlify.app"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://nexbus.netlify.app"
+        "EXPO_PUBLIC_API_URL": "https://nexbusbackend.netlify.app"
       }
     }
   }
