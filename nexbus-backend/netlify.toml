@@ -5,8 +5,6 @@
 
 [functions]
   node_bundler = "esbuild"
-  external_node_modules = ["firebase-admin", "@google-cloud/firestore", "@grpc/grpc-js"]
-  included_files = ["firestore.rules"]
 
 # Every URL (/buses, /auth/login, /api/trips, ...) is handled by the Express app
 [[redirects]]

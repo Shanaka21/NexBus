@@ -1,16 +1,16 @@
-jest.mock('../config/firebase', () => require('./helpers/firebase'));
-
 process.env.NODE_ENV = 'test';
 process.env.INTERNAL_JOB_TOKEN = 'job-secret';
 process.env.PAYHERE_MERCHANT_ID = '1211149';
 process.env.PAYHERE_MERCHANT_SECRET = 'test-secret';
 const request = require('supertest');
+const { pool, resetDb, seedFixedUsers, tokens } = require('./helpers/db');
 const app = require('../app');
-const fb = require('./helpers/firebase');
 
-const as = (req, token) => req.set('Authorization', `Bearer ${token}`);
+const as = (req, role) => req.set('Authorization', `Bearer ${tokens[role] || role}`);
+const logs = async (where) => (await pool.query('SELECT * FROM system_logs')).rows.filter(where);
 
-beforeEach(() => { fb.__audit.length = 0; });
+beforeEach(async () => { await resetDb(); await seedFixedUsers(); });
+afterAll(async () => { await pool.end(); });
 
 describe('authentication (ST1, ST2)', () => {
   test('request without a token is rejected', async () => {
@@ -23,7 +23,7 @@ describe('authentication (ST1, ST2)', () => {
     const res = await as(request(app).get('/routes'), 'garbage');
     expect(res.status).toBe(401);
     expect(res.body.code).toBe('TOKEN_INVALID');
-    expect(fb.__audit.some(l => l.action === 'AUTH_FAILED' && l.severity === 'security')).toBe(true);
+    expect(await logs(l => l.action === 'AUTH_FAILED' && l.severity === 'security')).not.toHaveLength(0);
   });
 
   test('expired token is rejected', async () => {
@@ -42,7 +42,7 @@ describe('role based access (ST4, ST5, TC04)', () => {
     const res = await as(request(app).post('/vehicles'), 'passenger').send({});
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('FORBIDDEN');
-    expect(fb.__audit.some(l => l.action === 'ACCESS_DENIED' && l.user_id === 'p1')).toBe(true);
+    expect(await logs(l => l.action === 'ACCESS_DENIED' && l.user_id === 'p1')).not.toHaveLength(0);
   });
 
   test.each([
@@ -106,13 +106,13 @@ describe('payment notification endpoint (ST12, TC27)', () => {
     const res = await request(app).post('/payments/notify').type('form').send(form());
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('INVALID_SIGNATURE');
-    expect(fb.__audit.some(l => l.action === 'PAYMENT_NOTIFY_REJECTED' && l.severity === 'security')).toBe(true);
+    expect(await logs(l => l.action === 'PAYMENT_NOTIFY_REJECTED' && l.severity === 'security')).not.toHaveLength(0);
   });
 
   test('malformed notification is rejected and logged', async () => {
     const res = await request(app).post('/payments/notify').type('form').send({ order_id: 'x' });
     expect(res.status).toBe(400);
-    expect(fb.__audit.some(l => l.action === 'PAYMENT_NOTIFY_REJECTED')).toBe(true);
+    expect(await logs(l => l.action === 'PAYMENT_NOTIFY_REJECTED')).not.toHaveLength(0);
   });
 
   test('wrong merchant id is rejected', async () => {
@@ -140,7 +140,7 @@ describe('internal scheduler endpoints (ST15)', () => {
   test('rejected with a wrong token and logged', async () => {
     const res = await request(app).post('/internal/expire-holds').set('x-internal-token', 'nope');
     expect(res.status).toBe(403);
-    expect(fb.__audit.some(l => l.action === 'ACCESS_DENIED')).toBe(true);
+    expect(await logs(l => l.action === 'ACCESS_DENIED')).not.toHaveLength(0);
   });
 
   test('a user token is not accepted as a job token', async () => {
@@ -170,10 +170,10 @@ describe('transport security and error handling (ST9-ST11)', () => {
 
   test('unexpected errors return a generic 500 without internals (ST10)', async () => {
     const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
-    const original = fb.db.collection;
-    fb.db.collection = () => { throw new Error('secret database detail'); };
+    const original = pool.query.bind(pool);
+    pool.query = () => { throw new Error('secret database detail'); };
     const res = await as(request(app).get('/notifications/me'), 'passenger');
-    fb.db.collection = original;
+    pool.query = original;
     spy.mockRestore();
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ error: 'Internal server error', code: 'INTERNAL_ERROR' });

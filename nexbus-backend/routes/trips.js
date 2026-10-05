@@ -28,6 +28,10 @@ router.get('/:id/availability', async (req, res) => {
   res.json(await tripService.getAvailability(req.params.id));
 });
 
+router.get('/:id/summary', authorize('driver', 'operator', 'admin'), async (req, res) => {
+  res.json(await tripService.tripSummary(req.user, req.params.id));
+});
+
 router.patch('/:id/status', authorize('driver', 'operator'), validate(schemas.tripStatus), async (req, res) => {
   const result = await tripService.changeStatus(req.user, req.params.id, req.valid.body.status);
   await audit.log({ userId: req.user.uid, action: `TRIP_${req.valid.body.status.toUpperCase()}`, entity: 'trips', entityId: req.params.id });

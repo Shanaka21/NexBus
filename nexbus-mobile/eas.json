@@ -17,14 +17,12 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyCTckLNS-PJ8xVsrJ6doA8rcedELybQZQY",
         "EXPO_PUBLIC_API_URL": "https://nexbus.netlify.app"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyCTckLNS-PJ8xVsrJ6doA8rcedELybQZQY",
         "EXPO_PUBLIC_API_URL": "https://nexbus.netlify.app"
       }
     }

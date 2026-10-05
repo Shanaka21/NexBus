@@ -6,7 +6,6 @@ import 'react-native-reanimated';
 import { ThemeProvider, useTheme } from '../lib/themeContext';
 import { setAuthExpiredHandler } from '../lib/api';
 import '../lib/webAlert'; // makes Alert.alert show browser dialogs on the web
-import '../lib/firebaseSession'; // registers the Firebase sign-out that runs when the session is cleared
 import { restoreSession } from '../lib/sessionStore';
 
 function RootStack() {

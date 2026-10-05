@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { OAuth2Client } = require('google-auth-library');
 const authenticate = require('../middleware/auth');
 const validate = require('../middleware/validate');
 const { strict } = require('../middleware/rateLimit');
@@ -8,6 +9,8 @@ const schemas = require('../schemas');
 const authService = require('../services/auth.service');
 const userService = require('../services/user.service');
 const audit = require('../services/audit.service');
+
+const googleClient = new OAuth2Client();
 
 router.post('/register', strict, validate(schemas.register), async (req, res) => {
   const { full_name: fullName, name, email, phone, password } = req.valid.body;
@@ -20,6 +23,22 @@ router.post('/login', strict, validate(schemas.login), async (req, res) => {
   res.json(await authService.login(req.valid.body.email, req.valid.body.password));
 });
 
+// Mobile Google sign-in: client gets a Google ID token via expo-auth-session, we verify it here.
+router.post('/google', strict, validate(schemas.google), async (req, res) => {
+  // The mobile app may authorize with its web, Android or iOS OAuth client id depending on platform;
+  // accept any of them as a valid audience (comma-separated in the env var).
+  const clientIds = (process.env.GOOGLE_CLIENT_ID || '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (!clientIds.length) throw new AppError(500, 'AUTH_NOT_CONFIGURED', 'Google sign-in is not configured on the server');
+  let payload;
+  try {
+    const ticket = await googleClient.verifyIdToken({ idToken: req.valid.body.id_token, audience: clientIds });
+    payload = ticket.getPayload();
+  } catch {
+    throw new AppError(401, 'TOKEN_INVALID', 'Invalid Google sign-in token');
+  }
+  res.json(await authService.loginWithGoogle({ googleSub: payload.sub, email: payload.email, name: payload.name }));
+});
+
 router.post('/refresh', validate(schemas.refresh), async (req, res) => {
   res.json(await authService.refresh(req.valid.body.refresh_token));
 });
@@ -28,10 +47,8 @@ router.post('/forgot-password', strict, validate(schemas.forgotPassword), async 
   res.json(await authService.forgotPassword(req.valid.body.email));
 });
 
-// A fresh custom token for the signed-in user, so clients that only hold an ID/refresh token can reopen
-// their read-only Firestore listeners after a page reload
-router.get('/firebase-token', authenticate, async (req, res) => {
-  res.json({ customToken: await authService.firebaseToken(req.user) });
+router.post('/reset-password', strict, validate(schemas.resetPassword), async (req, res) => {
+  res.json(await authService.resetPassword(req.valid.body.token, req.valid.body.password));
 });
 
 // Legacy profile endpoints (kept for the existing mobile screens); new code should use /users/me

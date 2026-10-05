@@ -1,23 +1,23 @@
 # NexBus API
 
-REST API (Node.js, Express 5) backed by Cloud Firestore and Firebase Authentication.
+REST API (Node.js, Express 5) backed by Postgres (Neon) with self-issued JWT authentication.
 Every path is available at `/` (used by the existing mobile app) and under `/api` (as written in the thesis).
 A Postman collection with example requests is in [docs/NexBus.postman_collection.json](docs/NexBus.postman_collection.json).
 
 ## Running it
 
-| Mode | Commands |
-|------|----------|
-| Real Firebase project | `npm install`, fill `.env` (see `.env.example`), `npm run seed`, `npm start` |
-| Local emulators (no quota, needs Java 11+) | `npm run emulators` in one terminal, then `npm run seed:emu` and `npm run start:emu` |
+`npm install`, fill `.env` (see `.env.example`), `npm run migrate` (applies `migrations/*.sql`), `npm run seed`, `npm start`.
 
-Other scripts: `npm test` (unit and API tests, no database needed), `npm run test:rules` (security rules, needs the emulators), `npm run smoke` / `npm run smoke:emu` (end-to-end checks against a running API), `npm run simulate -- --trip <tripId> --start` (replays a bus journey as a driver phone would).
+Other scripts: `npm test` (runs against the same Postgres database, truncating tables between test files — don't run it against data you want to keep), `npm run smoke` (end-to-end checks against a running API), `npm run simulate -- --trip <tripId> --start` (replays a bus journey as a driver phone would).
 
 ### Environment variables
 
 | Variable | Purpose |
 |----------|---------|
-| `FIREBASE_API_KEY` | Web API key, used to verify passwords through the Firebase Auth REST API |
+| `DATABASE_URL` | Postgres connection string (Neon or any Postgres), e.g. `postgresql://user:pass@host/db?sslmode=require` |
+| `JWT_SECRET` | Secret used to sign access tokens and hash refresh/reset tokens |
+| `APP_URL` | Public URL of the web dashboard; used to build the (currently console-logged) password reset link |
+| `GOOGLE_CLIENT_ID` | OAuth client id(s) (comma separated) accepted when verifying Google sign-in id tokens from the mobile app |
 | `DASHBOARD_ORIGIN` | Allowed browser origin(s) for the dashboard, comma separated. Open when empty (development) |
 | `PAYHERE_MERCHANT_ID`, `PAYHERE_MERCHANT_SECRET`, `PAYHERE_SANDBOX` | PayHere credentials. The secret never leaves the server |
 | `PAYHERE_SIMULATE` | `true` enables `POST /payments/simulate`, which completes a payment without a public notify URL. Keep `false` in production |
@@ -28,9 +28,10 @@ Other scripts: `npm test` (unit and API tests, no database needed), `npm run tes
 
 ## Authentication and roles
 
-Sign in with `POST /auth/login`. It returns an ID token (valid one hour), a refresh token and a Firebase custom token.
-Send the ID token as `Authorization: Bearer <token>`. Renew it with `POST /auth/refresh`.
-Roles: `passenger`, `driver`, `operator` (one company), `admin`. The role is a server-set custom claim.
+Sign in with `POST /auth/login`. It returns an access token (`idToken`, valid 30 minutes) and a refresh token.
+Send the access token as `Authorization: Bearer <token>`. Renew it with `POST /auth/refresh` (rotates the refresh token).
+Google sign-in (mobile) posts a Google ID token to `POST /auth/google` and gets back the same token pair.
+Roles: `passenger`, `driver`, `operator` (one company), `admin`. The role is embedded in the access token at issuance.
 
 ## Endpoints
 
@@ -39,9 +40,10 @@ Roles: `passenger`, `driver`, `operator` (one company), `admin`. The role is a s
 | POST `/auth/register` | public | Create a passenger account |
 | POST `/auth/login` | public | Email and password sign-in |
 | POST `/auth/refresh` | public | New ID token from a refresh token |
-| POST `/auth/forgot-password` | public | Send a password reset email |
-| GET `/auth/firebase-token` | all | Fresh custom token (reopen live listeners) |
-| GET, PATCH `/users/me` | all | Own profile (name, phone, language, FCM token) |
+| POST `/auth/forgot-password` | public | Request a password reset link (logged to the server console) |
+| POST `/auth/reset-password` | public | Set a new password from a reset token |
+| POST `/auth/google` | public | Sign in with a verified Google id token (mobile) |
+| GET, PATCH `/users/me` | all | Own profile (name, phone, language, push token) |
 | GET `/routes`, `/routes/:id` | all | Routes with ordered stops |
 | POST `/routes`, PUT `/routes/:id` | operator, admin | Create or update a route (distances are calculated from the stops) |
 | DELETE `/routes/:id` | admin | Deactivate a route |
@@ -55,6 +57,7 @@ Roles: `passenger`, `driver`, `operator` (one company), `admin`. The role is a s
 | GET `/trips` (`?route_id=&date=&status=`) | all | Trips. Drivers and operators see their own |
 | POST `/trips` | operator | Schedule a trip (vehicle and driver) |
 | GET `/trips/:id/availability`, `/trips/:id/live` | all | Seats and fare; live status with next stops |
+| GET `/trips/:id/summary` | driver, operator, admin | Distance/duration/passengers from recorded GPS fixes |
 | PATCH `/trips/:id/status` | driver, operator | Start, complete or cancel a trip |
 | POST `/location` | driver | One GPS fix of a running trip (sent every 10 s) |
 | POST `/bookings` | passenger | Book 1 to 4 seats (held for 10 minutes) |
@@ -82,9 +85,9 @@ Every error is JSON: `{ "error": "<message>", "code": "<CODE>", "details": [...]
 `LOW_ACCURACY` (422), `SEATS_UNAVAILABLE`, `TRIP_CLOSED`, `BOARDING_PASSED`, `BOOKING_NOT_PAYABLE` (409),
 `INVALID_SIGNATURE`, `AMOUNT_MISMATCH` (400), `RATE_LIMITED` (429), `INTERNAL_ERROR` (500, no internals revealed).
 
-## Data model (Firestore collections)
+## Data model (Postgres tables, see `migrations/`)
 
-`users`, `operators`, `bus_stops`, `routes` (stops stored inside the route), `vehicles`, `trips`, `bookings`, `payments`,
-`notifications`, `location_logs` (30 day retention), `system_logs` (audit), `system_meta`.
-Field names are snake_case. Trips carry `service_date`, bookings `created_day` and payments `created_day` / `paid_day`
-(Sri Lanka dates) so that queries read one day at a time instead of whole collections.
+`users`, `operators`, `bus_stops`, `routes`, `route_stops` (a route's ordered stops), `vehicles`, `trips`, `bookings`,
+`payments`, `notifications`, `location_logs` (30 day retention), `system_logs` (audit), `refresh_tokens`, `password_resets`.
+Field names are snake_case. Timestamps the app treats as raw epoch-ms numbers (`created_at`, `scheduled_departure`,
+`hold_expires_at`, ...) are stored as `bigint`; `trips.service_date` stays a `YYYY-MM-DD` Sri Lanka date string.

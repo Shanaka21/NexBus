@@ -1,69 +1,72 @@
-const { db, auth } = require('../config/firebase');
+const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
+const { pool } = require('../config/db');
 const { AppError } = require('../utils/errors');
 const { clearProfileCache } = require('../middleware/auth');
 
-const AUTH_ERRORS = {
-  'auth/email-already-exists': [409, 'EMAIL_IN_USE', 'Email already registered'],
-  'auth/invalid-email': [400, 'VALIDATION_ERROR', 'Invalid email address'],
-  'auth/invalid-password': [400, 'VALIDATION_ERROR', 'Password must be at least 6 characters']
-};
+function row(r) {
+  if (!r) return null;
+  return {
+    uid: r.id, full_name: r.full_name, name: r.full_name, email: r.email, phone: r.phone || '',
+    role: r.role, operator_id: r.operator_id || null, status: r.status, preferred_language: r.preferred_language,
+    region: r.region || undefined, push_token: r.push_token || undefined, created_at: Number(r.created_at)
+  };
+}
 
-// Creates the Firebase account, the server-set role claim and the profile document.
 async function createAccount({ email, password, full_name: fullName, phone, role, operator_id: operatorId }) {
-  let user;
+  const uid = crypto.randomUUID();
+  const passwordHash = await bcrypt.hash(password, 10);
+  const now = Date.now();
   try {
-    user = await auth.createUser({ email, password, displayName: fullName });
+    const { rows } = await pool.query(
+      `INSERT INTO users (id, email, password_hash, full_name, phone, role, operator_id, status, preferred_language, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', 'en', $8) RETURNING *`,
+      [uid, email, passwordHash, fullName, phone || '', role, operatorId || null, now]
+    );
+    return row(rows[0]);
   } catch (err) {
-    const mapped = AUTH_ERRORS[err.code];
-    if (mapped) throw new AppError(mapped[0], mapped[1], mapped[2]);
+    if (err.code === '23505') throw new AppError(409, 'EMAIL_IN_USE', 'Email already registered');
     throw err;
   }
-  await auth.setCustomUserClaims(user.uid, { role, operatorId: operatorId || null });
-  const profile = {
-    full_name: fullName,
-    name: fullName, // older clients read `name`
-    email,
-    phone: phone || '',
-    role,
-    operator_id: operatorId || null,
-    status: 'active',
-    preferred_language: 'en',
-    created_at: Date.now()
-  };
-  await db.collection('users').doc(user.uid).set(profile);
-  return { uid: user.uid, ...profile };
 }
 
 async function getProfile(uid) {
-  const doc = await db.collection('users').doc(uid).get();
-  if (!doc.exists) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
-  return { uid: doc.id, ...doc.data() };
+  const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [uid]);
+  if (!rows[0]) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
+  return row(rows[0]);
 }
 
-// Accounts that sign in with a provider (Google) have no profile yet: create the passenger profile on first use.
+// Accounts that sign in with a provider (Google) are expected to already have a row from /auth/google;
+// this is only a defensive fallback in case a profile is somehow missing.
 async function ensurePassengerProfile(user) {
-  const fullName = user.name || (user.email ? user.email.split('@')[0] : 'Passenger');
-  const profile = {
-    full_name: fullName, name: fullName, email: user.email || '', phone: '', role: 'passenger',
-    operator_id: null, status: 'active', preferred_language: 'en', created_at: Date.now()
-  };
-  await db.collection('users').doc(user.uid).set(profile);
-  await auth.setCustomUserClaims(user.uid, { role: 'passenger', operatorId: null });
+  const existing = await pool.query('SELECT * FROM users WHERE id = $1', [user.uid]);
+  if (existing.rows[0]) return row(existing.rows[0]);
+  const fullName = user.email ? user.email.split('@')[0] : 'Passenger';
+  const now = Date.now();
+  const { rows } = await pool.query(
+    `INSERT INTO users (id, email, full_name, phone, role, status, preferred_language, created_at)
+     VALUES ($1, $2, $3, '', 'passenger', 'active', 'en', $4) RETURNING *`,
+    [user.uid, user.email || '', fullName, now]
+  );
   clearProfileCache(user.uid);
-  return { uid: user.uid, ...profile };
+  return row(rows[0]);
 }
 
 async function updateProfile(uid, patch) {
-  const updates = {};
-  if (patch.full_name) { updates.full_name = patch.full_name; updates.name = patch.full_name; }
-  if (patch.phone !== undefined) updates.phone = patch.phone;
-  if (patch.region !== undefined) updates.region = patch.region;
-  if (patch.preferred_language) updates.preferred_language = patch.preferred_language;
-  if (patch.fcm_token) updates.fcm_token = patch.fcm_token;
-  updates.updated_at = Date.now();
-  await db.collection('users').doc(uid).set(updates, { merge: true });
+  const sets = [];
+  const values = [];
+  const add = (col, val) => { values.push(val); sets.push(`${col} = $${values.length}`); };
+
+  if (patch.full_name) add('full_name', patch.full_name);
+  if (patch.phone !== undefined) add('phone', patch.phone);
+  if (patch.region !== undefined) add('region', patch.region);
+  if (patch.preferred_language) add('preferred_language', patch.preferred_language);
+  if (patch.push_token) add('push_token', patch.push_token);
+  add('updated_at', Date.now());
+
+  values.push(uid);
+  await pool.query(`UPDATE users SET ${sets.join(', ')} WHERE id = $${values.length}`, values);
   clearProfileCache(uid);
-  if (patch.full_name) await auth.updateUser(uid, { displayName: patch.full_name });
   return getProfile(uid);
 }
 

@@ -1,8 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_URL } from "./config";
-import { apiFetch } from "./api";
 import { getUserId, getUserName, getUserEmail, getRole, getOperatorId, getRefreshToken, setUserSession, onSessionCleared } from "./userSession";
-import { signInFirebase } from "./firebaseSession";
 
 const KEY = "nexbus_session";
 
@@ -35,11 +33,6 @@ export async function restoreSession(): Promise<boolean> {
     setUserSession(saved.uid, saved.name, saved.email, {
       role: saved.role, operatorId: saved.operatorId, idToken: data.idToken, refreshToken: data.refreshToken,
     });
-    // reopen the live listeners without blocking the app start
-    apiFetch("/auth/firebase-token")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => signInFirebase(d?.customToken))
-      .catch(() => {});
     return true;
   } catch {
     return false;

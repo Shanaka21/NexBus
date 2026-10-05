@@ -21,6 +21,8 @@ exports.register = Joi.object({
 exports.login = Joi.object({ email: email.required(), password: Joi.string().required() });
 exports.refresh = Joi.object({ refresh_token: Joi.string().required() });
 exports.forgotPassword = Joi.object({ email: email.required() });
+exports.resetPassword = Joi.object({ token: Joi.string().required(), password: password.required() });
+exports.google = Joi.object({ id_token: Joi.string().required() });
 
 exports.profilePatch = Joi.object({
   full_name: Joi.string().trim().min(2).max(80),
@@ -28,7 +30,7 @@ exports.profilePatch = Joi.object({
   phone,
   region: Joi.string().trim().max(60).allow(''),
   preferred_language: Joi.string().valid('en', 'si', 'ta'),
-  fcm_token: Joi.string().max(4096)
+  push_token: Joi.string().max(4096)
 }).min(1);
 
 exports.stop = Joi.object({

@@ -1,87 +1,98 @@
-const { db, auth } = require('../config/firebase');
+const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
+const { pool } = require('../config/db');
 const { AppError } = require('../utils/errors');
 const audit = require('./audit.service');
+const { signAccessToken, issueRefreshToken, rotateRefreshToken, revokeAllRefreshTokens, ACCESS_TTL_SEC, hashToken } = require('../utils/tokens');
 
-// With the Firebase Auth emulator running (FIREBASE_AUTH_EMULATOR_HOST) the same REST calls go to the emulator
-const emulator = process.env.FIREBASE_AUTH_EMULATOR_HOST ? 'http://' + process.env.FIREBASE_AUTH_EMULATOR_HOST + '/' : 'https://';
-const IDENTITY = emulator + 'identitytoolkit.googleapis.com/v1/accounts';
-const SECURE_TOKEN = emulator + 'securetoken.googleapis.com/v1/token';
+const RESET_TTL_MS = 60 * 60 * 1000; // 1 hour
 
-function apiKey() {
-  const key = process.env.FIREBASE_API_KEY;
-  if (!key) throw new AppError(500, 'AUTH_NOT_CONFIGURED', 'Sign-in is not configured on the server');
-  return key;
-}
-
-async function post(url, body) {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  return res.json();
-}
-
-// Verifies the password with the Firebase Auth REST API and returns tokens plus the profile.
 async function login(email, password) {
-  const data = await post(`${IDENTITY}:signInWithPassword?key=${apiKey()}`, { email, password, returnSecureToken: true });
-  if (data.error) {
+  const { rows } = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+  const u = rows[0];
+  if (!u || !u.password_hash || !(await bcrypt.compare(password, u.password_hash))) {
     await audit.log({ action: 'LOGIN_FAILED', entity: 'users', severity: 'security', details: { email } });
-    if (String(data.error.message).startsWith('USER_DISABLED')) {
-      throw new AppError(401, 'ACCOUNT_DISABLED', 'This account has been disabled');
-    }
     throw new AppError(401, 'INVALID_CREDENTIALS', 'Invalid email or password');
   }
+  if (u.status === 'disabled') throw new AppError(401, 'ACCOUNT_DISABLED', 'This account has been disabled');
 
-  const uid = data.localId;
-  const profile = (await db.collection('users').doc(uid).get()).data() || {};
-  if (profile.status === 'disabled') throw new AppError(401, 'ACCOUNT_DISABLED', 'This account has been disabled');
+  const idToken = signAccessToken({ uid: u.id, role: u.role, operatorId: u.operator_id, tokenVersion: u.token_version, email: u.email });
+  const refreshToken = await issueRefreshToken(u.id);
+  await audit.log({ userId: u.id, action: 'LOGIN', entity: 'users', entityId: u.id });
 
-  const role = profile.role || 'passenger';
-  const operatorId = profile.operator_id || null;
-
-  // Accounts created before roles existed get their claim set on first sign-in
-  const record = await auth.getUser(uid);
-  if (record.customClaims?.role !== role) {
-    await auth.setCustomUserClaims(uid, { role, operatorId });
-  }
-  // The custom token lets the client open read-only Firestore listeners that are restricted by the security rules
-  const customToken = await auth.createCustomToken(uid, { role, operatorId });
-
-  await audit.log({ userId: uid, action: 'LOGIN', entity: 'users', entityId: uid });
   return {
-    message: 'Login successful',
-    uid,
-    name: profile.full_name || profile.name || data.displayName || 'User',
-    email: data.email,
-    role,
-    operator_id: operatorId,
-    idToken: data.idToken,
-    refreshToken: data.refreshToken,
-    expiresIn: Number(data.expiresIn),
-    customToken
+    message: 'Login successful', uid: u.id, name: u.full_name, email: u.email,
+    role: u.role, operator_id: u.operator_id || null, idToken, refreshToken, expiresIn: ACCESS_TTL_SEC
   };
 }
 
 async function refresh(refreshToken) {
-  const res = await fetch(`${SECURE_TOKEN}?key=${apiKey()}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken })
-  });
-  const data = await res.json();
-  if (data.error) throw new AppError(401, 'TOKEN_INVALID', 'Your session has expired. Please sign in again');
-  return { idToken: data.id_token, refreshToken: data.refresh_token, expiresIn: Number(data.expires_in) };
+  const rotated = await rotateRefreshToken(refreshToken);
+  if (!rotated) throw new AppError(401, 'TOKEN_INVALID', 'Your session has expired. Please sign in again');
+  const { rows } = await pool.query('SELECT * FROM users WHERE id = $1', [rotated.userId]);
+  const u = rows[0];
+  if (!u || u.status === 'disabled') throw new AppError(401, 'TOKEN_INVALID', 'Your session has expired. Please sign in again');
+
+  const idToken = signAccessToken({ uid: u.id, role: u.role, operatorId: u.operator_id, tokenVersion: u.token_version, email: u.email });
+  return { idToken, refreshToken: rotated.refreshToken, expiresIn: ACCESS_TTL_SEC };
+}
+
+// Google sign-in: the caller has already verified the Google ID token (see routes/auth.js). Finds or
+// creates the passenger account by google_sub/email, then issues the same token pair as a password login.
+async function loginWithGoogle({ googleSub, email, name }) {
+  let { rows } = await pool.query('SELECT * FROM users WHERE google_sub = $1 OR email = $2', [googleSub, email]);
+  let u = rows[0];
+  if (!u) {
+    const uid = crypto.randomUUID();
+    const now = Date.now();
+    const inserted = await pool.query(
+      `INSERT INTO users (id, email, full_name, phone, role, status, preferred_language, google_sub, created_at)
+       VALUES ($1, $2, $3, '', 'passenger', 'active', 'en', $4, $5) RETURNING *`,
+      [uid, email, name || email.split('@')[0], googleSub, now]
+    );
+    u = inserted.rows[0];
+  } else if (!u.google_sub) {
+    await pool.query('UPDATE users SET google_sub = $1 WHERE id = $2', [googleSub, u.id]);
+  }
+  if (u.status === 'disabled') throw new AppError(401, 'ACCOUNT_DISABLED', 'This account has been disabled');
+
+  const idToken = signAccessToken({ uid: u.id, role: u.role, operatorId: u.operator_id, tokenVersion: u.token_version, email: u.email });
+  const refreshToken = await issueRefreshToken(u.id);
+  await audit.log({ userId: u.id, action: 'LOGIN', entity: 'users', entityId: u.id, details: { provider: 'google' } });
+  return {
+    message: 'Login successful', uid: u.id, name: u.full_name, email: u.email,
+    role: u.role, operator_id: u.operator_id || null, idToken, refreshToken, expiresIn: ACCESS_TTL_SEC
+  };
 }
 
 // Always answers the same way so the endpoint cannot be used to discover which emails are registered.
 async function forgotPassword(email) {
-  await post(`${IDENTITY}:sendOobCode?key=${apiKey()}`, { requestType: 'PASSWORD_RESET', email });
+  const { rows } = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+  if (rows[0]) {
+    const raw = crypto.randomBytes(32).toString('hex');
+    const now = Date.now();
+    await pool.query(
+      'INSERT INTO password_resets (user_id, token_hash, created_at, expires_at) VALUES ($1, $2, $3, $4)',
+      [rows[0].id, hashToken(raw), now, now + RESET_TTL_MS]
+    );
+    const appUrl = process.env.APP_URL || 'http://localhost:5173';
+    // No email provider is wired up yet; log the link so the reset flow is usable in dev/demo.
+    console.log(`Password reset link for ${email}: ${appUrl}/reset-password?token=${raw}`);
+  }
   return { message: 'If this email is registered, a reset link has been sent.' };
 }
 
-async function firebaseToken(user) {
-  return auth.createCustomToken(user.uid, { role: user.role, operatorId: user.operatorId || null });
+async function resetPassword(token, newPassword) {
+  const { rows } = await pool.query('SELECT * FROM password_resets WHERE token_hash = $1', [hashToken(token)]);
+  const reset = rows[0];
+  if (!reset || reset.used_at || reset.expires_at < Date.now()) {
+    throw new AppError(400, 'TOKEN_INVALID', 'This reset link is invalid or has expired');
+  }
+  const passwordHash = await bcrypt.hash(newPassword, 10);
+  await pool.query('UPDATE users SET password_hash = $1, token_version = token_version + 1 WHERE id = $2', [passwordHash, reset.user_id]);
+  await pool.query('UPDATE password_resets SET used_at = $1 WHERE id = $2', [Date.now(), reset.id]);
+  await revokeAllRefreshTokens(reset.user_id);
+  return { message: 'Password has been reset. Please sign in again.' };
 }
 
-module.exports = { login, refresh, forgotPassword, firebaseToken };
+module.exports = { login, refresh, loginWithGoogle, forgotPassword, resetPassword };

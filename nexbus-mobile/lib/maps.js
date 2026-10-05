@@ -14,4 +14,8 @@ export function Marker() {
   return null;
 }
 
+export function Polyline() {
+  return null;
+}
+
 export const mapProvider = undefined;

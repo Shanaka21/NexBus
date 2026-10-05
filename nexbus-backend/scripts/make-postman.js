@@ -13,7 +13,8 @@ const E = [
   ['Auth', 'Login (admin)', 'POST', '/auth/login', null, { email: 'admin@nexbus.lk', password: 'Admin@1234' }],
   ['Auth', 'Refresh token', 'POST', '/auth/refresh', null, { refresh_token: '{{refreshToken}}' }],
   ['Auth', 'Forgot password', 'POST', '/auth/forgot-password', null, { email: 'demo@nexbus.lk' }],
-  ['Auth', 'Firebase custom token', 'GET', '/auth/firebase-token', 'passenger'],
+  ['Auth', 'Reset password', 'POST', '/auth/reset-password', null, { token: '{{resetToken}}', password: 'NewSecret@123' }],
+  ['Auth', 'Google sign-in', 'POST', '/auth/google', null, { id_token: '{{googleIdToken}}' }],
   ['Users', 'My profile', 'GET', '/users/me', 'passenger'],
   ['Users', 'Update my profile', 'PATCH', '/users/me', 'passenger', { phone: '0771234567', preferred_language: 'si' }],
   ['Routes and stops', 'List routes', 'GET', '/routes', 'passenger'],
@@ -34,6 +35,7 @@ const E = [
   ['Trips', 'List my trips today (driver)', 'GET', '/trips', 'driver'],
   ['Trips', 'Schedule trip', 'POST', '/trips', 'operator', { route_id: 'r138', vehicle_id: 'NB-4521', driver_id: '{{driverUid}}', scheduled_departure: '2026-10-10T07:00:00+05:30' }],
   ['Trips', 'Seat availability', 'GET', '/trips/{{tripId}}/availability', 'passenger'],
+  ['Trips', 'Trip summary (distance/duration)', 'GET', '/trips/{{tripId}}/summary', 'driver'],
   ['Trips', 'Live detail (next stops, ETA)', 'GET', '/trips/{{tripId}}/live', 'passenger'],
   ['Trips', 'Start trip', 'PATCH', '/trips/{{tripId}}/status', 'driver', { status: 'running' }],
   ['Trips', 'End trip', 'PATCH', '/trips/{{tripId}}/status', 'driver', { status: 'completed' }],
@@ -106,7 +108,7 @@ const collection = {
   variable: [
     { key: 'baseUrl', value: 'http://localhost:5000' },
     ...Object.values(ROLES).map((key) => ({ key, value: '' })),
-    ...['refreshToken', 'tripId', 'bookingId', 'orderId', 'driverUid', 'userUid', 'notificationId', 'internalJobToken'].map((key) => ({ key, value: '' })),
+    ...['refreshToken', 'tripId', 'bookingId', 'orderId', 'driverUid', 'userUid', 'notificationId', 'internalJobToken', 'resetToken', 'googleIdToken'].map((key) => ({ key, value: '' })),
   ],
   item: Object.entries(folders).map(([name, item]) => ({ name, item })),
 };

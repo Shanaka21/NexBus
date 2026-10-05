@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, StatusBar, Alert, ActivityIndicator, RefreshControl,
 } from "react-native";
@@ -7,12 +7,15 @@ import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { apiJson } from "../../lib/api";
 import { clearSession, getUserName } from "../../lib/userSession";
-import { clockTime } from "../../lib/format";
+import { clockTime, dayTime } from "../../lib/format";
 
 type Trip = {
   id: string; route_id: string; route_number: string; registration_no: string; status: string;
   scheduled_departure: number; delay_minutes: number; reservable_seats: number; available_seats: number;
+  service_date: string;
 };
+
+type Tab = "today" | "upcoming" | "history";
 
 const STATUS: Record<string, { label: string; color: string; bg: string }> = {
   scheduled: { label: "Scheduled", color: "#1a3cff", bg: "#e3f2fd" },
@@ -30,10 +33,13 @@ export default function DriverTripsScreen() {
   const [routeNames, setRouteNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [tab, setTab] = useState<Tab>("today");
 
+  // /trips with no date defaults to a yesterday/today/tomorrow window (already scoped to this driver),
+  // which is enough to split into Today / Upcoming (tomorrow) / History (finished trips) without extra calls.
   const load = useCallback(async () => {
     try {
-      const [t, r] = await Promise.all([apiJson(`/trips?date=${colomboToday()}`), apiJson("/routes")]);
+      const [t, r] = await Promise.all([apiJson("/trips"), apiJson("/routes")]);
       if (t.ok && Array.isArray(t.data)) setTrips(t.data);
       else Alert.alert("Error", t.data?.error || "Could not load your trips.");
       if (r.ok && Array.isArray(r.data)) {
@@ -48,6 +54,20 @@ export default function DriverTripsScreen() {
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const today = colomboToday();
+  const visible = useMemo(() => {
+    const sorted = trips.slice().sort((a, b) => a.scheduled_departure - b.scheduled_departure);
+    if (tab === "today") return sorted.filter((t) => t.service_date === today);
+    if (tab === "upcoming") return sorted.filter((t) => t.status === "scheduled" && t.service_date !== today);
+    return sorted.filter((t) => ["completed", "cancelled"].includes(t.status)).reverse(); // most recent first
+  }, [trips, tab, today]);
+
+  const TABS: { key: Tab; label: string }[] = [
+    { key: "today", label: "Today" },
+    { key: "upcoming", label: "Upcoming" },
+    { key: "history", label: "History" },
+  ];
 
   const logout = () => {
     Alert.alert("Logout", "Are you sure you want to logout?", [
@@ -66,25 +86,41 @@ export default function DriverTripsScreen() {
           <Text style={styles.headerSub}>Driver mode</Text>
           <Text style={styles.headerTitle}>{getUserName() || "Driver"}</Text>
         </View>
-        <TouchableOpacity onPress={logout}>
-          <Ionicons name="log-out-outline" size={26} color="#fff" />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity onPress={() => router.push("/profile" as any)}>
+            <Ionicons name="person-circle-outline" size={26} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push("/settings" as any)}>
+            <Ionicons name="settings-outline" size={24} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={logout}>
+            <Ionicons name="log-out-outline" size={26} color="#fff" />
+          </TouchableOpacity>
+        </View>
       </LinearGradient>
 
-      <Text style={styles.sectionTitle}>Today&apos;s trips</Text>
+      <View style={styles.tabRow}>
+        {TABS.map((t) => (
+          <TouchableOpacity key={t.key} style={[styles.tab, tab === t.key && styles.tabActive]} onPress={() => setTab(t.key)}>
+            <Text style={[styles.tabText, tab === t.key && styles.tabTextActive]}>{t.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
 
       {loading ? (
         <ActivityIndicator size="large" color="#1a3cff" style={{ marginTop: 40 }} />
       ) : (
         <FlatList
-          data={trips}
+          data={visible}
           keyExtractor={(t) => t.id}
           contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
           ListEmptyComponent={
             <View style={styles.empty}>
               <Ionicons name="calendar-outline" size={48} color="#ccc" />
-              <Text style={styles.emptyText}>No trips assigned to you today.</Text>
+              <Text style={styles.emptyText}>
+                {tab === "today" ? "No trips assigned to you today." : tab === "upcoming" ? "No upcoming trips scheduled yet." : "No finished trips yet."}
+              </Text>
             </View>
           }
           renderItem={({ item }) => {
@@ -103,7 +139,7 @@ export default function DriverTripsScreen() {
                   </View>
                 </View>
                 <View style={styles.cardBottom}>
-                  <View style={styles.meta}><Ionicons name="time-outline" size={14} color="#888" /><Text style={styles.metaText}>{clockTime(item.scheduled_departure)}</Text></View>
+                  <View style={styles.meta}><Ionicons name="time-outline" size={14} color="#888" /><Text style={styles.metaText}>{tab === "today" ? clockTime(item.scheduled_departure) : dayTime(item.scheduled_departure)}</Text></View>
                   {item.reservable_seats > 0 && (
                     <View style={styles.meta}><Ionicons name="people-outline" size={14} color="#888" /><Text style={styles.metaText}>{booked} / {item.reservable_seats} seats booked</Text></View>
                   )}
@@ -125,7 +161,12 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingTop: 54, paddingBottom: 22 },
   headerSub: { fontSize: 12, color: "rgba(255,255,255,0.75)", fontWeight: "600", letterSpacing: 1 },
   headerTitle: { fontSize: 22, fontWeight: "bold", color: "#fff", marginTop: 2 },
-  sectionTitle: { fontSize: 17, fontWeight: "bold", color: "#1a1a4e", paddingHorizontal: 20, marginTop: 18, marginBottom: 8 },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 16 },
+  tabRow: { flexDirection: "row", gap: 8, paddingHorizontal: 16, marginTop: 18, marginBottom: 6 },
+  tab: { flex: 1, borderRadius: 12, paddingVertical: 10, alignItems: "center", backgroundColor: "#fff" },
+  tabActive: { backgroundColor: "#1a3cff" },
+  tabText: { fontSize: 13, fontWeight: "700", color: "#888" },
+  tabTextActive: { color: "#fff" },
   list: { paddingHorizontal: 16, paddingBottom: 40 },
   card: { backgroundColor: "#fff", borderRadius: 16, padding: 16, marginBottom: 12, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
   cardTop: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 12 },

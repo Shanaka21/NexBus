@@ -1,4 +1,4 @@
-const { db } = require('../config/firebase');
+const { pool } = require('../config/db');
 const { AppError } = require('../utils/errors');
 const { colomboDate } = require('../utils/format');
 const cache = require('./cache');
@@ -7,6 +7,17 @@ const routeService = require('./route.service');
 const stopService = require('./stop.service');
 
 const STALE_MS = 10 * 60 * 1000;
+
+function row(r) {
+  return {
+    id: r.id, route_id: r.route_id, route_number: r.route_number, vehicle_id: r.vehicle_id,
+    registration_no: r.registration_no, operator_id: r.operator_id, driver_id: r.driver_id,
+    scheduled_departure: Number(r.scheduled_departure), service_date: r.service_date, status: r.status,
+    delay_minutes: r.delay_minutes || 0, reservable_seats: r.reservable_seats || 0, available_seats: r.available_seats || 0,
+    last_latitude: r.last_latitude, last_longitude: r.last_longitude,
+    last_update_at: r.last_update_at != null ? Number(r.last_update_at) : null, recent_fixes: r.recent_fixes || []
+  };
+}
 
 // ETA of one trip to the stop at stops[targetIndex]. Returns null when the bus has already passed it.
 function tripEta(trip, route, stops, targetIndex, now = Date.now()) {
@@ -35,15 +46,14 @@ function tripEta(trip, route, stops, targetIndex, now = Date.now()) {
 }
 
 // Running trips plus the scheduled trips of today (and of tomorrow only when the 4 hour look-ahead crosses
-// midnight), using equality filters only. Cached because every passenger screen polls these results.
+// midnight). Cached because every passenger screen polls these results.
 function activeTrips() {
   return cache.cached('active-trips', async () => {
     const days = [...new Set([colomboDate(), colomboDate(Date.now() + 4 * 3600 * 1000)])];
-    const [running, scheduled] = await Promise.all([
-      db.collection('trips').where('status', '==', 'running').get(),
-      db.collection('trips').where('service_date', 'in', days).where('status', '==', 'scheduled').get()
-    ]);
-    return [...running.docs, ...scheduled.docs].map(d => ({ id: d.id, ...d.data() }));
+    const { rows } = await pool.query(
+      "SELECT * FROM trips WHERE status = 'running' OR (service_date = ANY($1) AND status = 'scheduled')", [days]
+    );
+    return rows.map(row);
   });
 }
 
@@ -74,7 +84,7 @@ async function arrivalsForStop(stopId, now = Date.now()) {
         delay_minutes: trip.delay_minutes || 0,
         reservable_seats: trip.reservable_seats || 0,
         available_seats: trip.available_seats || 0,
-        fare_lkr: route.base_fare_lkr,
+        fare_lkr: Number(route.base_fare_lkr),
         scheduled_departure: trip.scheduled_departure,
         ...info
       });
@@ -85,9 +95,9 @@ async function arrivalsForStop(stopId, now = Date.now()) {
 
 // Live detail of one trip for the map: status, seats and the next stops with their ETA (UC02 step 5)
 async function tripLive(tripId, now = Date.now()) {
-  const doc = await db.collection('trips').doc(tripId).get();
-  if (!doc.exists) throw new AppError(404, 'TRIP_NOT_FOUND', 'Trip not found');
-  const trip = { id: doc.id, ...doc.data() };
+  const { rows } = await pool.query('SELECT * FROM trips WHERE id = $1', [tripId]);
+  if (!rows[0]) throw new AppError(404, 'TRIP_NOT_FOUND', 'Trip not found');
+  const trip = row(rows[0]);
   const route = await routeService.getRoute(trip.route_id);
   const stops = await stopService.routeStops(route);
 
@@ -118,7 +128,7 @@ async function tripLive(tripId, now = Date.now()) {
     delay_minutes: trip.delay_minutes || 0,
     reservable_seats: trip.reservable_seats || 0,
     available_seats: trip.available_seats || 0,
-    fare_lkr: route.base_fare_lkr,
+    fare_lkr: Number(route.base_fare_lkr),
     updated_seconds_ago: updatedSecondsAgo,
     next_stops: nextStops
   };

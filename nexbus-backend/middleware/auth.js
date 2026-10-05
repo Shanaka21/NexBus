@@ -1,20 +1,21 @@
-const { db, auth } = require('../config/firebase');
+const { pool } = require('../config/db');
+const { verifyAccessToken } = require('../utils/tokens');
 const audit = require('../services/audit.service');
 const { AppError } = require('../utils/errors');
 
-const profileCache = new Map(); // uid -> { at, profile }
+const statusCache = new Map(); // uid -> { at, status, token_version }
 const CACHE_MS = 60 * 1000;
 
-async function loadProfile(uid) {
-  const hit = profileCache.get(uid);
-  if (hit && Date.now() - hit.at < CACHE_MS) return hit.profile;
-  const snap = await db.collection('users').doc(uid).get();
-  const profile = snap.exists ? snap.data() : {};
-  profileCache.set(uid, { at: Date.now(), profile });
-  return profile;
+async function loadStatus(uid) {
+  const hit = statusCache.get(uid);
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit;
+  const { rows } = await pool.query('SELECT status, token_version FROM users WHERE id = $1', [uid]);
+  const entry = { at: Date.now(), status: rows[0]?.status || null, token_version: rows[0]?.token_version ?? 0 };
+  statusCache.set(uid, entry);
+  return entry;
 }
 
-const clearProfileCache = (uid) => profileCache.delete(uid);
+const clearProfileCache = (uid) => statusCache.delete(uid);
 
 async function authenticate(req, res, next) {
   const header = req.headers.authorization || '';
@@ -23,22 +24,22 @@ async function authenticate(req, res, next) {
 
   let decoded;
   try {
-    decoded = await auth.verifyIdToken(token, true); // true = reject revoked tokens
+    decoded = verifyAccessToken(token);
   } catch (err) {
-    await audit.log({ action: 'AUTH_FAILED', entity: req.originalUrl, severity: 'security', details: { code: err.code } });
+    await audit.log({ action: 'AUTH_FAILED', entity: req.originalUrl, severity: 'security', details: { code: err.name } });
     throw new AppError(401, 'TOKEN_INVALID', 'Your session has expired. Please sign in again');
   }
 
-  // Role comes from the server-set custom claim; accounts created before claims fall back to the profile.
-  const profile = await loadProfile(decoded.uid);
-  if (profile.status === 'disabled') throw new AppError(401, 'ACCOUNT_DISABLED', 'This account has been disabled');
+  const status = await loadStatus(decoded.uid);
+  if (status.status === 'disabled') throw new AppError(401, 'ACCOUNT_DISABLED', 'This account has been disabled');
+  if (status.status === null) throw new AppError(401, 'TOKEN_INVALID', 'Your session has expired. Please sign in again');
+  if (status.token_version !== decoded.tokenVersion) throw new AppError(401, 'TOKEN_INVALID', 'Your session has expired. Please sign in again');
 
   req.user = {
     uid: decoded.uid,
     email: decoded.email,
-    name: decoded.name,
-    role: decoded.role || profile.role || 'passenger',
-    operatorId: decoded.operatorId || profile.operator_id || null
+    role: decoded.role,
+    operatorId: decoded.operatorId || null
   };
   next();
 }

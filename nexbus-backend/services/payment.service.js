@@ -1,10 +1,9 @@
 const crypto = require('crypto');
-const { db } = require('../config/firebase');
+const { pool, withTransaction } = require('../config/db');
 const { AppError } = require('../utils/errors');
 const notify = require('./notify.service');
 const audit = require('./audit.service');
 const cache = require('./cache');
-const { colomboDate } = require('../utils/format');
 
 const md5u = (s) => crypto.createHash('md5').update(s).digest('hex').toUpperCase();
 const STATUS = { '2': 'success', '0': 'pending', '-1': 'canceled', '-2': 'failed', '-3': 'chargedback' };
@@ -34,24 +33,28 @@ async function createCheckout(user, bookingId) {
   const { merchantId, sandbox, baseUrl } = cfg();
   if (!merchantId) throw new AppError(500, 'PAYMENT_NOT_CONFIGURED', 'Online payment is not configured');
 
-  const bookingRef = db.collection('bookings').doc(bookingId);
-  const b = (await bookingRef.get()).data();
+  const bRes = await pool.query('SELECT * FROM bookings WHERE id = $1', [bookingId]);
+  const b = bRes.rows[0];
   if (!b || b.user_id !== user.uid) throw new AppError(404, 'BOOKING_NOT_FOUND', 'Booking not found');
-  if (b.booking_status !== 'pending_payment' || (b.hold_expires_at || 0) < Date.now()) {
+  if (b.status !== 'pending_payment' || Number(b.hold_expires_at || 0) < Date.now()) {
     throw new AppError(409, 'BOOKING_NOT_PAYABLE', 'This booking can no longer be paid. Please book again');
   }
 
-  const profile = (await db.collection('users').doc(user.uid).get()).data() || {};
+  const profileRes = await pool.query('SELECT * FROM users WHERE id = $1', [user.uid]);
+  const profile = profileRes.rows[0] || {};
   const orderId = `${b.booking_reference}-${Date.now().toString(36)}`;
   const amount = Number(b.fare_amount_lkr).toFixed(2);
+  const now = Date.now();
 
-  await db.collection('payments').doc(orderId).set({
-    booking_id: bookingId, order_id: orderId, user_id: user.uid, operator_id: b.operator_id || null,
-    amount_lkr: Number(amount), currency: 'LKR', payment_status: 'pending', created_at: Date.now(), created_day: colomboDate()
-  });
-  await bookingRef.update({ payment_status: 'pending' });
+  await pool.query(
+    `INSERT INTO payments (id, booking_id, user_id, operator_id, amount_lkr, currency, payment_status, created_at)
+     VALUES ($1,$2,$3,$4,$5,'LKR','pending',$6)`,
+    [orderId, bookingId, user.uid, b.operator_id || null, Number(amount), now]
+  );
 
-  const fullName = profile.full_name || profile.name || 'NexBus Passenger';
+  await pool.query("UPDATE bookings SET payment_status = 'pending' WHERE id = $1", [bookingId]);
+
+  const fullName = profile.full_name || 'NexBus Passenger';
   const [firstName, ...rest] = fullName.split(' ');
   return {
     sandbox,
@@ -78,51 +81,53 @@ async function handleNotify(n) {
     throw new AppError(400, 'INVALID_SIGNATURE', 'Invalid payment signature');
   }
 
-  const paymentRef = db.collection('payments').doc(n.order_id);
-  const outcome = await db.runTransaction(async (tx) => {
-    const paymentSnap = await tx.get(paymentRef);
-    if (!paymentSnap.exists) throw new AppError(404, 'PAYMENT_NOT_FOUND', 'Payment not found');
-    const p = paymentSnap.data();
+  const outcome = await withTransaction(async (tx) => {
+    const paymentRes = await tx.query('SELECT * FROM payments WHERE id = $1 FOR UPDATE', [n.order_id]);
+    const p = paymentRes.rows[0];
+    if (!p) throw new AppError(404, 'PAYMENT_NOT_FOUND', 'Payment not found');
 
     if (Number(n.payhere_amount).toFixed(2) !== Number(p.amount_lkr).toFixed(2) || n.payhere_currency !== p.currency) {
       throw new AppError(400, 'AMOUNT_MISMATCH', 'Payment amount does not match the booking');
     }
     if (p.payment_status === 'success') return { duplicate: true };
 
-    const bookingRef = db.collection('bookings').doc(p.booking_id);
-    const bookingSnap = await tx.get(bookingRef);
-    const b = bookingSnap.data();
-    const tripRef = db.collection('trips').doc(b.trip_id);
-    const trip = (await tx.get(tripRef)).data();
+    const bookingRes = await tx.query('SELECT * FROM bookings WHERE id = $1 FOR UPDATE', [p.booking_id]);
+    const b = bookingRes.rows[0];
+    const tripRes = await tx.query('SELECT * FROM trips WHERE id = $1 FOR UPDATE', [b.trip_id]);
+    const trip = tripRes.rows[0];
 
     const status = STATUS[n.status_code] || 'failed';
-    const paymentPatch = {
-      payment_status: status, status_code: Number(n.status_code),
-      gateway_payment_id: n.payment_id || null, method: n.method || null, updated_at: Date.now()
-    };
-    if (status === 'success') paymentPatch.paid_day = colomboDate();
-    const bookingPatch = { payment_status: status };
+    const now = Date.now();
     let confirmed = false;
+    let needsReview = false;
+    let bookingStatus = b.status;
+    let refundRequired = b.refund_required;
 
     if (status === 'success') {
       const seatsFree = trip && ['scheduled', 'running'].includes(trip.status) && trip.available_seats >= b.seat_count;
-      if (b.booking_status === 'pending_payment') {
+      if (b.status === 'pending_payment') {
         confirmed = true;
-      } else if (b.booking_status === 'expired' && seatsFree) {
+      } else if (b.status === 'expired' && seatsFree) {
         // Paid after the hold expired but the seats are still free: re-hold and confirm
-        tx.update(tripRef, { available_seats: trip.available_seats - b.seat_count });
+        await tx.query('UPDATE trips SET available_seats = available_seats - $1 WHERE id = $2', [b.seat_count, b.trip_id]);
         confirmed = true;
       } else {
         // Paid after expiry/cancellation with no seats left, or a second payment: operator must refund
-        paymentPatch.needs_review = true;
-        bookingPatch.refund_required = true;
+        needsReview = true;
+        refundRequired = true;
       }
-      if (confirmed) Object.assign(bookingPatch, { booking_status: 'confirmed', status: 'confirmed' });
+      if (confirmed) bookingStatus = 'confirmed';
     }
 
-    tx.update(paymentRef, paymentPatch);
-    tx.update(bookingRef, bookingPatch);
-    return { status, confirmed, userId: b.user_id, bookingId: p.booking_id, reference: b.booking_reference, review: !!paymentPatch.needs_review };
+    await tx.query(
+      'UPDATE payments SET payment_status = $1, status_code = $2, gateway_payment_id = $3, method = $4, updated_at = $5, needs_review = $6 WHERE id = $7',
+      [status, Number(n.status_code), n.payment_id || null, n.method || null, now, needsReview, n.order_id]
+    );
+    await tx.query(
+      'UPDATE bookings SET payment_status = $1, status = $2, refund_required = $3 WHERE id = $4',
+      [status, bookingStatus, refundRequired, p.booking_id]
+    );
+    return { status, confirmed, userId: b.user_id, bookingId: p.booking_id, reference: b.booking_reference, review: needsReview };
   });
 
   if (outcome.duplicate) return outcome;
@@ -156,7 +161,8 @@ async function simulate(user, orderId, statusCode = '2') {
   const { merchantId, secret } = cfg();
   if (!merchantId || !secret) throw new AppError(500, 'PAYMENT_NOT_CONFIGURED', 'Online payment is not configured');
 
-  const p = (await db.collection('payments').doc(orderId).get()).data();
+  const pRes = await pool.query('SELECT * FROM payments WHERE id = $1', [orderId]);
+  const p = pRes.rows[0];
   if (!p || p.user_id !== user.uid) throw new AppError(404, 'PAYMENT_NOT_FOUND', 'Payment not found');
 
   const n = {

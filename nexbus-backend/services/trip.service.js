@@ -1,68 +1,84 @@
-const { db } = require('../config/firebase');
+const crypto = require('crypto');
+const { pool } = require('../config/db');
 const { AppError } = require('../utils/errors');
 const notify = require('./notify.service');
 const { colomboDate } = require('../utils/format');
 const cache = require('./cache');
+const eta = require('./eta.service');
 
 const ALLOWED = { // current status -> allowed next status
   scheduled: ['running', 'cancelled'],
   running: ['completed']
 };
 
+function row(r) {
+  return {
+    id: r.id, route_id: r.route_id, route_number: r.route_number, vehicle_id: r.vehicle_id,
+    registration_no: r.registration_no, operator_id: r.operator_id, driver_id: r.driver_id,
+    driver_name: r.driver_name, scheduled_departure: Number(r.scheduled_departure), service_date: r.service_date,
+    actual_departure: r.actual_departure != null ? Number(r.actual_departure) : null, direction: r.direction,
+    status: r.status, delay_minutes: r.delay_minutes || 0, reservable_seats: r.reservable_seats || 0,
+    available_seats: r.available_seats || 0, last_latitude: r.last_latitude, last_longitude: r.last_longitude,
+    last_update_at: r.last_update_at != null ? Number(r.last_update_at) : null, recent_fixes: r.recent_fixes || [],
+    created_at: Number(r.created_at)
+  };
+}
+
 async function createTrip(user, dto) {
-  const [vehicleDoc, routeDoc, driverDoc] = await Promise.all([
-    db.collection('vehicles').doc(dto.vehicle_id).get(),
-    db.collection('routes').doc(dto.route_id).get(),
-    db.collection('users').doc(dto.driver_id).get()
+  const [vehicleRes, routeRes, driverRes] = await Promise.all([
+    pool.query('SELECT * FROM vehicles WHERE id = $1', [dto.vehicle_id]),
+    pool.query('SELECT * FROM routes WHERE id = $1', [dto.route_id]),
+    pool.query('SELECT * FROM users WHERE id = $1', [dto.driver_id])
   ]);
-  if (!routeDoc.exists) throw new AppError(404, 'ROUTE_NOT_FOUND', 'Route not found');
-  if (!vehicleDoc.exists) throw new AppError(404, 'VEHICLE_NOT_FOUND', 'Vehicle not found');
-  const vehicle = vehicleDoc.data();
-  const route = routeDoc.data();
+  const vehicle = vehicleRes.rows[0];
+  const route = routeRes.rows[0];
+  if (!route) throw new AppError(404, 'ROUTE_NOT_FOUND', 'Route not found');
+  if (!vehicle) throw new AppError(404, 'VEHICLE_NOT_FOUND', 'Vehicle not found');
   if (vehicle.operator_id !== user.operatorId) throw new AppError(403, 'FORBIDDEN', 'This vehicle belongs to another company');
   if (vehicle.route_id !== dto.route_id) throw new AppError(400, 'VEHICLE_ROUTE_MISMATCH', 'This vehicle is not permitted on that route');
 
-  const driver = driverDoc.exists ? driverDoc.data() : null;
+  const driver = driverRes.rows[0];
   if (!driver || driver.role !== 'driver' || driver.operator_id !== user.operatorId) {
     throw new AppError(400, 'DRIVER_INVALID', 'Driver must be a driver account of your company');
   }
 
   const reservable = vehicle.reservable_seats || 0;
+  const id = crypto.randomUUID();
+  const scheduledDeparture = +dto.scheduled_departure;
+  const now = Date.now();
   const data = {
-    route_id: dto.route_id,
-    route_number: route.route_number,
-    vehicle_id: dto.vehicle_id,
-    registration_no: vehicle.registration_no || vehicle.bus_number,
-    operator_id: user.operatorId,
-    driver_id: dto.driver_id,
-    driver_name: driver.full_name || driver.name || '',
-    scheduled_departure: +dto.scheduled_departure,
-    service_date: colomboDate(+dto.scheduled_departure),
-    actual_departure: null,
-    direction: dto.direction || 'outbound',
-    status: 'scheduled',
-    delay_minutes: 0,
-    reservable_seats: reservable,
-    available_seats: reservable,
-    created_at: Date.now()
+    id, route_id: dto.route_id, route_number: route.route_number, vehicle_id: dto.vehicle_id,
+    registration_no: vehicle.id, operator_id: user.operatorId, driver_id: dto.driver_id,
+    driver_name: driver.full_name || '', scheduled_departure: scheduledDeparture, service_date: colomboDate(scheduledDeparture),
+    actual_departure: null, direction: dto.direction || 'outbound', status: 'scheduled', delay_minutes: 0,
+    reservable_seats: reservable, available_seats: reservable, created_at: now
   };
-  const ref = await db.collection('trips').add(data);
+  await pool.query(
+    `INSERT INTO trips (id, route_id, route_number, vehicle_id, registration_no, operator_id, driver_id, driver_name,
+       scheduled_departure, service_date, actual_departure, direction, status, delay_minutes, reservable_seats, available_seats, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+    [id, data.route_id, data.route_number, data.vehicle_id, data.registration_no, data.operator_id, data.driver_id,
+      data.driver_name, data.scheduled_departure, data.service_date, data.actual_departure, data.direction, data.status,
+      data.delay_minutes, data.reservable_seats, data.available_seats, data.created_at]
+  );
   cache.invalidate();
-  return { id: ref.id, ...data };
+  return data;
 }
 
 // Trips are always read for a small window of service dates (one day when a date is given, otherwise
-// yesterday to tomorrow) with equality filters only, so a query never reads the whole collection.
+// yesterday to tomorrow), so a query never reads the whole table.
 async function listTrips(user, q) {
   const dates = q.date ? [q.date] : [colomboDate(Date.now() - 86400000), colomboDate(), colomboDate(Date.now() + 86400000)];
-  let query = db.collection('trips');
-  query = dates.length === 1 ? query.where('service_date', '==', dates[0]) : query.where('service_date', 'in', dates);
+  const where = ['service_date = ANY($1)'];
+  const params = [dates];
+  const add = (cond, val) => { params.push(val); where.push(cond.replace('?', `$${params.length}`)); };
 
-  if (q.route_id) query = query.where('route_id', '==', q.route_id);
-  if (user.role === 'driver') query = query.where('driver_id', '==', user.uid);
-  if (user.role === 'operator') query = query.where('operator_id', '==', user.operatorId);
+  if (q.route_id) add('route_id = ?', q.route_id);
+  if (user.role === 'driver') add('driver_id = ?', user.uid);
+  if (user.role === 'operator') add('operator_id = ?', user.operatorId);
 
-  let trips = (await query.get()).docs.map(d => ({ id: d.id, ...d.data() }));
+  const { rows } = await pool.query(`SELECT * FROM trips WHERE ${where.join(' AND ')}`, params);
+  let trips = rows.map(row);
 
   if (q.status) trips = trips.filter(t => t.status === q.status);
   else if (user.role === 'passenger' || user.role === 'admin') trips = trips.filter(t => ['scheduled', 'running'].includes(t.status));
@@ -70,25 +86,23 @@ async function listTrips(user, q) {
 }
 
 async function getAvailability(tripId) {
-  const trip = (await db.collection('trips').doc(tripId).get()).data();
-  if (!trip) throw new AppError(404, 'TRIP_NOT_FOUND', 'Trip not found');
-  const route = (await db.collection('routes').doc(trip.route_id).get()).data() || {};
+  const { rows } = await pool.query('SELECT * FROM trips WHERE id = $1', [tripId]);
+  if (!rows[0]) throw new AppError(404, 'TRIP_NOT_FOUND', 'Trip not found');
+  const trip = row(rows[0]);
+  const routeRes = await pool.query('SELECT * FROM routes WHERE id = $1', [trip.route_id]);
+  const route = routeRes.rows[0] || {};
   return {
-    trip_id: tripId,
-    status: trip.status,
-    scheduled_departure: trip.scheduled_departure,
-    reservable_seats: trip.reservable_seats || 0,
-    available_seats: trip.available_seats || 0,
-    fare_lkr: route.base_fare_lkr || 0,
-    delay_minutes: trip.delay_minutes || 0
+    trip_id: tripId, status: trip.status, scheduled_departure: trip.scheduled_departure,
+    reservable_seats: trip.reservable_seats, available_seats: trip.available_seats,
+    fare_lkr: route.base_fare_lkr != null ? Number(route.base_fare_lkr) : 0, delay_minutes: trip.delay_minutes
   };
 }
 
 // Start / complete / cancel a trip, with ownership checks (Appendix B.1)
 async function changeStatus(user, tripId, next) {
-  const ref = db.collection('trips').doc(tripId);
-  const trip = (await ref.get()).data();
-  if (!trip) throw new AppError(404, 'TRIP_NOT_FOUND', 'Trip not found');
+  const { rows } = await pool.query('SELECT * FROM trips WHERE id = $1', [tripId]);
+  if (!rows[0]) throw new AppError(404, 'TRIP_NOT_FOUND', 'Trip not found');
+  const trip = row(rows[0]);
 
   const isDriver = user.role === 'driver' && trip.driver_id === user.uid;
   const isOperator = user.role === 'operator' && trip.operator_id === user.operatorId;
@@ -97,43 +111,91 @@ async function changeStatus(user, tripId, next) {
     throw new AppError(409, 'INVALID_STATUS_CHANGE', `A ${trip.status} trip cannot become ${next}`);
   }
 
-  const update = { status: next };
-  if (next === 'running') update.actual_departure = Date.now();
-  await ref.update(update);
+  if (next === 'running') {
+    await pool.query('UPDATE trips SET status = $1, actual_departure = $2 WHERE id = $3', [next, Date.now(), tripId]);
+  } else {
+    await pool.query('UPDATE trips SET status = $1 WHERE id = $2', [next, tripId]);
+  }
   cache.invalidate();
 
-  const vehicleRef = db.collection('vehicles').doc(trip.vehicle_id);
   if (next === 'running') {
-    await vehicleRef.update({ current_trip_id: tripId, status: 'active' });
+    await pool.query("UPDATE vehicles SET current_trip_id = $1, status = 'active' WHERE id = $2", [tripId, trip.vehicle_id]);
   }
 
   if (next === 'completed' || next === 'cancelled') {
-    await vehicleRef.update({ current_trip_id: null, delay_minutes: 0 });
-    const snap = await db.collection('bookings').where('trip_id', '==', tripId).get();
-    const open = snap.docs.filter(d => ['confirmed', 'pending_payment'].includes(d.data().booking_status));
-    const batch = db.batch();
+    await pool.query('UPDATE vehicles SET current_trip_id = NULL, delay_minutes = 0 WHERE id = $1', [trip.vehicle_id]);
+    const openRes = await pool.query(
+      "SELECT * FROM bookings WHERE trip_id = $1 AND status IN ('confirmed', 'pending_payment')", [tripId]
+    );
     const notices = [];
-    open.forEach(d => {
-      const b = d.data();
+    for (const b of openRes.rows) {
       let status;
-      if (next === 'completed') status = b.booking_status === 'confirmed' ? 'completed' : 'expired';
-      else status = b.booking_status === 'confirmed' ? 'cancelled' : 'expired';
-      const patch = { booking_status: status, status };
-      if (next === 'cancelled' && b.booking_status === 'confirmed') patch.refund_required = true;
-      batch.update(d.ref, patch);
+      if (next === 'completed') status = b.status === 'confirmed' ? 'completed' : 'expired';
+      else status = b.status === 'confirmed' ? 'cancelled' : 'expired';
+      const refundRequired = next === 'cancelled' && b.status === 'confirmed';
+      await pool.query(
+        'UPDATE bookings SET status = $1, refund_required = refund_required OR $2 WHERE id = $3',
+        [status, refundRequired, b.id]
+      );
       if (next === 'cancelled') {
         notices.push(notify.sendToUser(b.user_id, {
           type: 'trip_cancelled', title: 'Trip cancelled',
           message: `Your trip on route ${trip.route_number} was cancelled by the operator.`
-            + (patch.refund_required ? ' A refund will be arranged.' : ''),
-          relatedTripId: tripId, relatedBookingId: d.id
+            + (refundRequired ? ' A refund will be arranged.' : ''),
+          relatedTripId: tripId, relatedBookingId: b.id
         }));
       }
-    });
-    await batch.commit();
+    }
     await Promise.all(notices);
   }
   return { id: tripId, status: next };
 }
 
-module.exports = { createTrip, listTrips, getAvailability, changeStatus };
+// Distance/duration/passenger summary for one trip, built from its recorded GPS fixes (driver, the
+// trip's own operator, or an admin only). Useful for a completed trip's history view.
+async function tripSummary(user, tripId) {
+  const { rows } = await pool.query('SELECT * FROM trips WHERE id = $1', [tripId]);
+  const t = rows[0];
+  if (!t) throw new AppError(404, 'TRIP_NOT_FOUND', 'Trip not found');
+  const trip = row(t);
+
+  const isDriver = user.role === 'driver' && trip.driver_id === user.uid;
+  const isOperator = user.role === 'operator' && trip.operator_id === user.operatorId;
+  const isAdmin = user.role === 'admin';
+  if (!isDriver && !isOperator && !isAdmin) throw new AppError(403, 'FORBIDDEN', 'You cannot view this trip');
+
+  const logsRes = await pool.query(
+    'SELECT latitude, longitude, speed_kmh, recorded_at FROM location_logs WHERE trip_id = $1 ORDER BY recorded_at ASC',
+    [tripId]
+  );
+  const fixes = logsRes.rows;
+
+  let distanceKm = 0;
+  for (let i = 1; i < fixes.length; i++) {
+    distanceKm += eta.haversine(
+      { lat: fixes[i - 1].latitude, lng: fixes[i - 1].longitude },
+      { lat: fixes[i].latitude, lng: fixes[i].longitude }
+    );
+  }
+
+  const startedAt = trip.actual_departure || (fixes[0] ? Number(fixes[0].recorded_at) : null);
+  const endedAt = ['completed', 'cancelled'].includes(trip.status)
+    ? (fixes.length ? Number(fixes[fixes.length - 1].recorded_at) : startedAt)
+    : Date.now();
+  const durationMin = startedAt && endedAt ? Math.max(0, Math.round((endedAt - startedAt) / 60000)) : null;
+  const avgSpeedKmh = durationMin ? Number((distanceKm / (durationMin / 60)).toFixed(1)) : null;
+
+  return {
+    trip_id: trip.id,
+    status: trip.status,
+    distance_km: Number(distanceKm.toFixed(2)),
+    duration_min: durationMin,
+    avg_speed_kmh: avgSpeedKmh,
+    fixes_count: fixes.length,
+    passengers: trip.reservable_seats > 0 ? trip.reservable_seats - trip.available_seats : null,
+    started_at: startedAt,
+    ended_at: ['completed', 'cancelled'].includes(trip.status) ? endedAt : null
+  };
+}
+
+module.exports = { createTrip, listTrips, getAvailability, changeStatus, tripSummary };

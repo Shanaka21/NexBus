@@ -5,8 +5,6 @@ import {
 import MapView, { Marker, mapProvider } from "../lib/maps";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter } from "expo-router";
-import { collection, onSnapshot } from "firebase/firestore";
-import { db } from "../firebase";
 import { apiJson } from "../lib/api";
 import { useTheme } from "../lib/themeContext";
 import { LIVE_STATUS, msAgo, stopLabel } from "../lib/format";
@@ -60,50 +58,27 @@ export default function MapScreen() {
   const [filterRoute, setFilterRoute] = useState<string | null>(null);
   const [detail, setDetail] = useState<TripLive | null>(null);
 
-  const toBus = (id: string, d: any): Bus | null => {
-    if (!d.current_trip_id || d.last_latitude == null) return null; // only buses that are running and have a position
-    return {
-      id, registration_no: d.registration_no || d.bus_number, route_number: d.route_number,
-      lat: d.last_latitude, lng: d.last_longitude, delay_minutes: d.delay_minutes || 0,
-      last_update_at: d.last_update_at || null, current_trip_id: d.current_trip_id,
-    };
-  };
-
-  // Live positions arrive through a read-only Firestore listener. If the listener cannot be opened
-  // (no Firebase session, blocked network) the screen falls back to polling the API every 20 seconds (paused in the background).
+  // Live positions are polled from the API every 20 seconds (paused while the app is in the background).
   useEffect(() => {
-    let poll: ReturnType<typeof setInterval> | null = null;
-
-    const startPolling = () => {
-      const load = async () => {
-        if (AppState.currentState !== "active") return;
-        try {
-          const { ok, data } = await apiJson("/buses");
-          if (ok && Array.isArray(data)) {
-            setBuses(data.filter((b: any) => b.trip_id && b.lat != null).map((b: any) => ({
-              id: b.id, registration_no: b.bus_number, route_number: b.route_number, lat: b.lat, lng: b.lng,
-              delay_minutes: b.delay_minutes || 0, last_update_at: b.last_update_at, current_trip_id: b.trip_id,
-            })));
-            setConnected(true);
-          } else setConnected(false);
-        } catch { setConnected(false); }
-        setLoading(false);
-      };
-      load();
-      poll = setInterval(load, 20000);
+    let stopped = false;
+    const load = async () => {
+      if (AppState.currentState !== "active") return;
+      try {
+        const { ok, data } = await apiJson("/buses");
+        if (stopped) return;
+        if (ok && Array.isArray(data)) {
+          setBuses(data.filter((b: any) => b.trip_id && b.lat != null).map((b: any) => ({
+            id: b.id, registration_no: b.bus_number, route_number: b.route_number, lat: b.lat, lng: b.lng,
+            delay_minutes: b.delay_minutes || 0, last_update_at: b.last_update_at, current_trip_id: b.trip_id,
+          })));
+          setConnected(true);
+        } else setConnected(false);
+      } catch { if (!stopped) setConnected(false); }
+      if (!stopped) setLoading(false);
     };
-
-    const unsubscribe = onSnapshot(
-      collection(db, "vehicles"),
-      (snap) => {
-        setBuses(snap.docs.map((d) => toBus(d.id, d.data())).filter((b): b is Bus => !!b));
-        setConnected(true);
-        setLoading(false);
-      },
-      () => { setConnected(false); if (!poll) startPolling(); }
-    );
-
-    return () => { unsubscribe(); if (poll) clearInterval(poll); };
+    load();
+    const poll = setInterval(load, 20000);
+    return () => { stopped = true; clearInterval(poll); };
   }, []);
 
   // Re-evaluate offline status and "updated N s ago" every few seconds

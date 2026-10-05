@@ -1,4 +1,5 @@
-const { db } = require('../config/firebase');
+const crypto = require('crypto');
+const { pool } = require('../config/db');
 const { AppError } = require('../utils/errors');
 const eta = require('./eta.service');
 
@@ -7,17 +8,17 @@ const CACHE_MS = 60 * 1000;
 
 async function allStops() {
   if (Date.now() - stopCache.at < CACHE_MS) return stopCache.map;
-  const snap = await db.collection('bus_stops').get();
+  const { rows } = await pool.query('SELECT * FROM bus_stops');
   stopCache = {
     at: Date.now(),
-    map: new Map(snap.docs.map(d => [d.id, { id: d.id, ...d.data() }]))
+    map: new Map(rows.map((r) => [r.id, { id: r.id, name: r.name, name_si: r.name_si, latitude: r.latitude, longitude: r.longitude, created_at: Number(r.created_at) }]))
   };
   return stopCache.map;
 }
 
 const invalidateStops = () => { stopCache = { at: 0, map: new Map() }; };
 
-// Joins the stop ids stored inside a route document with the stop master data.
+// Joins the stop ids on a route with the stop master data.
 async function routeStops(route) {
   const stops = await allStops();
   return (route.stops || [])
@@ -48,11 +49,14 @@ async function listStops({ near, limit } = {}) {
 }
 
 async function createStop({ name, name_si, latitude, longitude }) {
-  const ref = db.collection('bus_stops').doc();
-  const data = { name, name_si: name_si || '', latitude, longitude, created_at: Date.now() };
-  await ref.set(data);
+  const id = crypto.randomUUID();
+  const now = Date.now();
+  await pool.query(
+    'INSERT INTO bus_stops (id, name, name_si, latitude, longitude, created_at) VALUES ($1,$2,$3,$4,$5,$6)',
+    [id, name, name_si || '', latitude, longitude, now]
+  );
   invalidateStops();
-  return { id: ref.id, ...data };
+  return { id, name, name_si: name_si || '', latitude, longitude, created_at: now };
 }
 
 async function getStop(id) {

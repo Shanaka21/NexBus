@@ -1,19 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { collection, onSnapshot, query, where } from 'firebase/firestore'
-import { db } from './firebase'
 import { api } from './api'
 import { liveStatus } from './format'
 
-// Polling is the fallback when no Firestore listener can be opened; every call reads the whole fleet,
-// so keep it slow and pause it while the tab is hidden
+// Every call reads the whole fleet, so keep it slow and pause it while the tab is hidden.
 export const POLL_MS = 20000
 
-// Live fleet: vehicles joined with their running trip.
-// Positions arrive through read-only Firestore listeners; if a listener cannot be opened the hook polls the API.
+// Live fleet: vehicles joined with their running trip, kept fresh by polling the API.
 export function useFleet(user) {
   const [vehicles, setVehicles] = useState(null)
   const [trips, setTrips] = useState([])
-  const [live, setLive] = useState(true)
   const [error, setError] = useState(null)
   const [now, setNow] = useState(() => Date.now())
 
@@ -21,59 +16,29 @@ export function useFleet(user) {
 
   useEffect(() => {
     let poll = null
-    let stopVisibility = () => {}
     let stopped = false
 
-    const startPolling = () => {
-      if (poll || stopped) return
-      setLive(false)
-      const load = async () => {
-        if (document.hidden) return
-        try {
-          const { vehicles: v, trips: t } = await api('/vehicles/live') // one cached call for the whole fleet
-          if (stopped) return
-          setVehicles(v.map((x) => ({
-            id: x.id, registration_no: x.registration_no, route_number: x.route_number, status: x.status,
-            lat: x.lat, lng: x.lng, delay_minutes: x.delay_minutes, last_update_at: x.last_update_at,
-            current_trip_id: x.current_trip_id, operator_id: x.operator_id,
-          })))
-          setTrips(t)
-          setError(null)
-        } catch (err) {
-          if (!stopped) setError(err.message)
-        }
+    const load = async () => {
+      if (document.hidden) return
+      try {
+        const { vehicles: v, trips: t } = await api('/vehicles/live') // one cached call for the whole fleet
+        if (stopped) return
+        setVehicles(v.map((x) => ({
+          id: x.id, registration_no: x.registration_no, route_number: x.route_number, status: x.status,
+          lat: x.lat, lng: x.lng, delay_minutes: x.delay_minutes, last_update_at: x.last_update_at,
+          current_trip_id: x.current_trip_id, operator_id: x.operator_id,
+        })))
+        setTrips(t)
+        setError(null)
+      } catch (err) {
+        if (!stopped) setError(err.message)
       }
-      load()
-      poll = setInterval(load, POLL_MS)
-      document.addEventListener('visibilitychange', load)
-      stopVisibility = () => document.removeEventListener('visibilitychange', load)
     }
 
-    const vehicleQuery = operatorId
-      ? query(collection(db, 'vehicles'), where('operator_id', '==', operatorId))
-      : collection(db, 'vehicles')
-    const tripQuery = operatorId
-      ? query(collection(db, 'trips'), where('status', '==', 'running'), where('operator_id', '==', operatorId))
-      : query(collection(db, 'trips'), where('status', '==', 'running'))
-
-    const unsubVehicles = onSnapshot(vehicleQuery, (snap) => {
-      setVehicles(snap.docs.map((d) => {
-        const x = d.data()
-        return {
-          id: d.id, registration_no: x.registration_no || x.bus_number, route_number: x.route_number, status: x.status || 'active',
-          lat: x.last_latitude ?? null, lng: x.last_longitude ?? null, delay_minutes: x.delay_minutes || 0,
-          last_update_at: x.last_update_at || null, current_trip_id: x.current_trip_id || null, operator_id: x.operator_id,
-        }
-      }))
-      setLive(true)
-      setError(null)
-    }, startPolling)
-
-    const unsubTrips = onSnapshot(tripQuery, (snap) => {
-      setTrips(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
-    }, startPolling)
-
-    return () => { stopped = true; unsubVehicles(); unsubTrips(); stopVisibility(); if (poll) clearInterval(poll) }
+    load()
+    poll = setInterval(load, POLL_MS)
+    document.addEventListener('visibilitychange', load)
+    return () => { stopped = true; document.removeEventListener('visibilitychange', load); if (poll) clearInterval(poll) }
   }, [operatorId])
 
   // re-evaluate "offline" and "updated N s ago" regularly
@@ -96,5 +61,5 @@ export function useFleet(user) {
     }
   }), [vehicles, trips, now])
 
-  return { fleet, loading: vehicles === null, live, error, now }
+  return { fleet, loading: vehicles === null, live: false, error, now }
 }

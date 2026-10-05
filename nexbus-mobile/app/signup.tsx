@@ -14,7 +14,6 @@ import { Stack, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { API_URL } from "../lib/config";
 import { setUserSession } from "../lib/userSession";
-import { signInFirebase } from "../lib/firebaseSession";
 import { registerForPush } from "../lib/push";
 import { saveSession } from "../lib/sessionStore";
 import { useTheme } from "../lib/themeContext";
@@ -77,7 +76,6 @@ export default function SignupScreen() {
           setUserSession(session.uid, session.name, session.email, {
             role: session.role, idToken: session.idToken, refreshToken: session.refreshToken,
           });
-          await signInFirebase(session.customToken);
           await saveSession();
           registerForPush();
           Alert.alert("Success", "Account created!", [

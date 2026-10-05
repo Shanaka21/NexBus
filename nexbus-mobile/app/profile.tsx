@@ -67,17 +67,6 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     if (!uid) return;
-    apiJson("/bookings/me")
-      .then(({ ok, data }) => {
-        if (!ok || !Array.isArray(data)) return;
-        setStats({
-          total:     data.length,
-          confirmed: data.filter((b) => b.status === "confirmed").length,
-          completed: data.filter((b) => b.status === "completed").length,
-          cancelled: data.filter((b) => b.status === "cancelled").length,
-        });
-      })
-      .catch(() => {});
 
     apiJson("/users/me")
       .then(({ ok, data }) => {
@@ -87,11 +76,31 @@ export default function ProfileScreen() {
           setEditPhone(pr.phone);
           setEditRegion(pr.region);
         }
+        // Driver trips and passenger bookings use the same stat boxes (Total / Upcoming / Completed / Cancelled)
+        const role = data?.role;
+        const statsCall = role === "driver" ? apiJson("/trips") : apiJson("/bookings/me");
+        statsCall
+          .then(({ ok: statsOk, data: rows }) => {
+            if (!statsOk || !Array.isArray(rows)) return;
+            setStats(role === "driver" ? {
+              total:     rows.length,
+              confirmed: rows.filter((t) => t.status === "scheduled").length,
+              completed: rows.filter((t) => t.status === "completed").length,
+              cancelled: rows.filter((t) => t.status === "cancelled").length,
+            } : {
+              total:     rows.length,
+              confirmed: rows.filter((b) => b.status === "confirmed").length,
+              completed: rows.filter((b) => b.status === "completed").length,
+              cancelled: rows.filter((b) => b.status === "cancelled").length,
+            });
+          })
+          .catch(() => {});
       })
       .catch(() => {});
-  }, []);
+  }, [uid]);
 
-  const roleLabel = profile.role === "operator" ? "Bus Operator" : "Passenger";
+  const roleLabel = profile.role === "operator" ? "Bus Operator" : profile.role === "driver" ? "Bus Driver" : profile.role === "admin" ? "Administrator" : "Passenger";
+  const isDriver = profile.role === "driver";
 
   const pickAvatar = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -281,7 +290,14 @@ export default function ProfileScreen() {
           </View>
         )}
 
-        {!editing && (
+        {!editing && (isDriver ? (
+          <TouchableOpacity style={styles.primaryBtn} onPress={() => router.push("/driver" as any)}>
+            <LinearGradient colors={["#4f86f7", "#1a3cff", "#0d1b6e"]} style={styles.primaryBtnGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+              <Ionicons name="bus-outline" size={18} color="#fff" />
+              <Text style={styles.primaryBtnText}>View My Trips</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        ) : (
           <>
             <TouchableOpacity style={styles.primaryBtn} onPress={() => router.push("/newbooking" as any)}>
               <LinearGradient colors={["#4f86f7", "#1a3cff", "#0d1b6e"]} style={styles.primaryBtnGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
@@ -294,7 +310,7 @@ export default function ProfileScreen() {
               <Text style={styles.secondaryBtnText}>View Trip History</Text>
             </TouchableOpacity>
           </>
-        )}
+        ))}
 
       </ScrollView>
     </View>

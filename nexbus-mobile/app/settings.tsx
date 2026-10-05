@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
   StatusBar, ScrollView, Switch, Alert,
@@ -6,7 +6,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { clearSession } from "../lib/userSession";
+import { clearSession, getRole } from "../lib/userSession";
+import { apiJson } from "../lib/api";
 import { useTheme } from "../lib/themeContext";
 
 const light = {
@@ -36,6 +37,11 @@ export default function SettingsScreen() {
   const [notifArrival,  setNotifArrival]  = useState(true);
   const [notifPromo,    setNotifPromo]    = useState(false);
   const [locationShare, setLocationShare] = useState(true);
+  const [isDriver, setIsDriver] = useState(getRole() === "driver");
+
+  useEffect(() => {
+    apiJson("/users/me").then(({ ok, data }) => { if (ok) setIsDriver(data.role === "driver"); }).catch(() => {});
+  }, []);
 
   const handleDeleteAccount = () => {
     Alert.alert(
@@ -70,17 +76,30 @@ export default function SettingsScreen() {
         {/* Notifications */}
         <Text style={[styles.groupLabel, { color: p.groupLabel }]}>NOTIFICATIONS</Text>
         <View style={[styles.section, { backgroundColor: p.section }]}>
-          <ToggleRow icon="ticket-outline"   label="Booking Updates"  sub="Confirmations and cancellations" value={notifBookings} onToggle={setNotifBookings} palette={p} />
-          <View style={[styles.rowDivider, { backgroundColor: p.divider }]} />
-          <ToggleRow icon="bus-outline"      label="Bus Arrival Alerts" sub="When your bus is nearby"       value={notifArrival}  onToggle={setNotifArrival}  palette={p} />
-          <View style={[styles.rowDivider, { backgroundColor: p.divider }]} />
-          <ToggleRow icon="pricetag-outline" label="Promotions"        sub="Offers and discounts"           value={notifPromo}    onToggle={setNotifPromo}    palette={p} />
+          {isDriver ? (
+            <ToggleRow icon="alert-circle-outline" label="Trip Alerts" sub="New trips assigned, schedule changes" value={notifArrival} onToggle={setNotifArrival} palette={p} />
+          ) : (
+            <>
+              <ToggleRow icon="ticket-outline"   label="Booking Updates"  sub="Confirmations and cancellations" value={notifBookings} onToggle={setNotifBookings} palette={p} />
+              <View style={[styles.rowDivider, { backgroundColor: p.divider }]} />
+              <ToggleRow icon="bus-outline"      label="Bus Arrival Alerts" sub="When your bus is nearby"       value={notifArrival}  onToggle={setNotifArrival}  palette={p} />
+              <View style={[styles.rowDivider, { backgroundColor: p.divider }]} />
+              <ToggleRow icon="pricetag-outline" label="Promotions"        sub="Offers and discounts"           value={notifPromo}    onToggle={setNotifPromo}    palette={p} />
+            </>
+          )}
         </View>
 
         {/* Privacy */}
         <Text style={[styles.groupLabel, { color: p.groupLabel }]}>PRIVACY</Text>
         <View style={[styles.section, { backgroundColor: p.section }]}>
-          <ToggleRow icon="location-outline" label="Share Location" sub="Used to find nearest stops" value={locationShare} onToggle={setLocationShare} palette={p} />
+          <ToggleRow
+            icon="location-outline"
+            label="Share Location"
+            sub={isDriver ? "Required while a trip is running; turned on from the Active Trip screen" : "Used to find nearest stops"}
+            value={locationShare}
+            onToggle={setLocationShare}
+            palette={p}
+          />
         </View>
 
         {/* App */}

@@ -4,7 +4,7 @@ Smart public transport tracking and passenger decision support system for Sri La
 
 | Folder | What it is |
 |--------|------------|
-| [nexbus-backend](nexbus-backend) | REST API (Node.js, Express, Firebase). See [API.md](nexbus-backend/API.md) |
+| [nexbus-backend](nexbus-backend) | REST API (Node.js, Express, Postgres/Neon, JWT auth). See [API.md](nexbus-backend/API.md) |
 | [nexbus-mobile](nexbus-mobile) | Passenger and driver app (Expo, React Native). Runs on a phone and in the browser |
 | [nexbus-web](nexbus-web) | Operator and administrator dashboard (React, Vite) |
 
@@ -12,13 +12,10 @@ Smart public transport tracking and passenger decision support system for Sri La
 
 ## Quick start
 
-1. **Backend**: `cd nexbus-backend`, `npm install`, copy `.env.example` to `.env` and fill it, `npm run seed`, `npm start` (port 5000).
-   Without a Firebase quota or without internet use the local emulators instead: install Java, then `npm run emulators`, `npm run seed:emu`, `npm run start:emu`.
+1. **Backend**: `cd nexbus-backend`, `npm install`, copy `.env.example` to `.env` and fill it in (needs a Postgres `DATABASE_URL`, e.g. from [Neon](https://neon.tech)), `npm run migrate`, `npm run seed`, `npm start` (port 5000).
 2. **Mobile**: `cd nexbus-mobile`, `npm install`, copy `.env.example` to `.env.local`, `npx expo start` (press `w` for the browser, or scan the QR code with Expo Go).
    The API address is chosen in [nexbus-mobile/lib/config.js](nexbus-mobile/lib/config.js): `localhost` in the browser, your PC's LAN address on a phone.
 3. **Dashboard**: `cd nexbus-web`, `npm install`, copy `.env.example` to `.env.local`, `npm run dev`, open http://localhost:5173.
-
-The Firebase web API key (Project settings, General) goes into the two `.env.local` files. It is not stored in the source code.
 
 ## Demo accounts (created by the seed)
 
@@ -31,4 +28,4 @@ The Firebase web API key (Project settings, General) goes into the two `.env.loc
 
 ## Tests
 
-`cd nexbus-backend`: `npm test` (99 unit and API tests), `npm run test:rules` (Firestore security rules, needs the emulators), `npm run smoke` (end-to-end flow against a running API).
+`cd nexbus-backend`: `npm test` (99 unit and API tests — runs against the real Postgres database and truncates its tables between test files, so don't run it against data you want to keep), `npm run smoke` (end-to-end flow against a running API).

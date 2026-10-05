@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react'
-import { API, api, setTokens, clearTokens, refreshSession, getRefreshToken, setExpiredHandler } from './api'
-import { signInFirebase, signOutFirebase } from './firebase'
+import { API, setTokens, clearTokens, refreshSession, getRefreshToken, setExpiredHandler } from './api'
 
 const AuthContext = createContext(null)
 const STORAGE_KEY = 'nexbus_dashboard_session'
@@ -17,7 +16,6 @@ export function AuthProvider({ children }) {
   const logout = useCallback(() => {
     clearTokens()
     localStorage.removeItem(STORAGE_KEY)
-    signOutFirebase()
     setUser(null)
   }, [])
 
@@ -28,14 +26,10 @@ export function AuthProvider({ children }) {
     if (!stored?.refreshToken) return
 
     setTokens({ refreshToken: stored.refreshToken })
-    refreshSession().then(async (ok) => {
+    refreshSession().then((ok) => {
       if (!ok) { logout(); return }
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: stored.user, refreshToken: getRefreshToken() }))
       setUser(stored.user)
-      try {
-        const { customToken } = await api('/auth/firebase-token')
-        await signInFirebase(customToken)
-      } catch { /* live listeners fall back to polling */ }
     }).finally(() => setReady(true))
   }, [logout])
 
@@ -55,7 +49,6 @@ export function AuthProvider({ children }) {
     setTokens({ idToken: data.idToken, refreshToken: data.refreshToken })
     const profile = { uid: data.uid, name: data.name, email: data.email, role: data.role, operator_id: data.operator_id }
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: profile, refreshToken: data.refreshToken }))
-    await signInFirebase(data.customToken)
     setUser(profile)
   }, [])
 

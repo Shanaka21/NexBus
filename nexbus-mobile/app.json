@@ -10,10 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "lk.nexbus.mobile",
-      "config": {
-        "googleMapsApiKey": "AIzaSyCfS2jKs1FqBwP9vo3hFgUe-1mnW8I1cDg"
-      }
+      "bundleIdentifier": "lk.nexbus.mobile"
     },
     "android": {
       "adaptiveIcon": {
@@ -32,12 +29,7 @@
         "android.permission.ACCESS_BACKGROUND_LOCATION",
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.FOREGROUND_SERVICE_LOCATION"
-      ],
-      "config": {
-        "googleMaps": {
-          "apiKey": "AIzaSyCfS2jKs1FqBwP9vo3hFgUe-1mnW8I1cDg"
-        }
-      }
+      ]
     },
     "web": {
       "output": "static",
@@ -84,6 +76,13 @@
           "android": {
             "usesCleartextTraffic": true
           }
+        }
+      ],
+      [
+        "react-native-maps",
+        {
+          "androidGoogleMapsApiKey": "AIzaSyCfS2jKs1FqBwP9vo3hFgUe-1mnW8I1cDg",
+          "iosGoogleMapsApiKey": "AIzaSyCfS2jKs1FqBwP9vo3hFgUe-1mnW8I1cDg"
         }
       ]
     ],

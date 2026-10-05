@@ -1,38 +1,33 @@
-const { db } = require('../config/firebase');
+const { pool } = require('../config/db');
 const { colomboDate } = require('../utils/format');
 const cache = require('./cache');
 
-const count = async (query) => (await query.count().get()).data().count;
-
 // Dashboard overview. Operators see their own company only; administrators see everything.
-// Totals use Firestore count() aggregations, which cost far fewer reads than loading every document.
 function overview(user) {
   const operatorId = user.role === 'operator' ? user.operatorId : null;
   return cache.cached(`stats:${operatorId || 'all'}`, () => buildOverview(operatorId), 5000);
 }
 
+// $1::text IS NULL matches every row when operatorId is null (admin view); otherwise scopes to one operator.
 async function buildOverview(operatorId) {
-  const scope = (name) => {
-    const col = db.collection(name);
-    return operatorId ? col.where('operator_id', '==', operatorId) : col;
-  };
   const today = colomboDate();
-  const bookingCount = (status) => count(scope('bookings').where('booking_status', '==', status));
+  const todayStartMs = new Date(`${today}T00:00:00+05:30`).getTime();
+  const count = async (sql, ...extra) => Number((await pool.query(sql, [operatorId, ...extra])).rows[0].count);
 
-  const [vehicleSnap, runningSnap, totalBookings, bookedToday, pending, confirmed, cancelled, completed, scheduledToday] = await Promise.all([
-    scope('vehicles').get(),
-    scope('trips').where('status', '==', 'running').get(),
-    count(scope('bookings')),
-    count(scope('bookings').where('created_day', '==', today)),
-    bookingCount('pending_payment'),
-    bookingCount('confirmed'),
-    bookingCount('cancelled'),
-    bookingCount('completed'),
-    count(scope('trips').where('service_date', '==', today).where('status', '==', 'scheduled'))
+  const [vehicleRes, runningRes, totalBookings, bookedToday, pending, confirmed, cancelled, completed, scheduledToday] = await Promise.all([
+    pool.query('SELECT * FROM vehicles WHERE $1::text IS NULL OR operator_id = $1', [operatorId]),
+    pool.query("SELECT * FROM trips WHERE ($1::text IS NULL OR operator_id = $1) AND status = 'running'", [operatorId]),
+    count('SELECT COUNT(*) FROM bookings WHERE $1::text IS NULL OR operator_id = $1'),
+    count('SELECT COUNT(*) FROM bookings WHERE ($1::text IS NULL OR operator_id = $1) AND created_at >= $2 AND created_at < $3', todayStartMs, todayStartMs + 86400000),
+    count('SELECT COUNT(*) FROM bookings WHERE ($1::text IS NULL OR operator_id = $1) AND status = $2', 'pending_payment'),
+    count('SELECT COUNT(*) FROM bookings WHERE ($1::text IS NULL OR operator_id = $1) AND status = $2', 'confirmed'),
+    count('SELECT COUNT(*) FROM bookings WHERE ($1::text IS NULL OR operator_id = $1) AND status = $2', 'cancelled'),
+    count('SELECT COUNT(*) FROM bookings WHERE ($1::text IS NULL OR operator_id = $1) AND status = $2', 'completed'),
+    count("SELECT COUNT(*) FROM trips WHERE ($1::text IS NULL OR operator_id = $1) AND service_date = $2 AND status = 'scheduled'", today)
   ]);
 
-  const buses = vehicleSnap.docs.map(d => d.data());
-  const running = runningSnap.docs.map(d => d.data());
+  const buses = vehicleRes.rows;
+  const running = runningRes.rows;
 
   return {
     buses: {

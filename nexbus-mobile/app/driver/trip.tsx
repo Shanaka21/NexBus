@@ -5,27 +5,39 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter, useLocalSearchParams } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
+import MapView, { Marker, Polyline, mapProvider } from "../../lib/maps";
 import { apiJson, jsonBody } from "../../lib/api";
 import { startSharing, stopSharing, type SharingMode } from "../../lib/driverTracking";
-import { clockTime, msAgo } from "../../lib/format";
+import { clockTime, msAgo, stopLabel } from "../../lib/format";
 
 type Trip = {
   id: string; route_id: string; route_number: string; registration_no: string; status: string;
   scheduled_departure: number; delay_minutes: number; reservable_seats: number; available_seats: number;
-  last_update_at?: number;
+  last_update_at?: number; last_latitude?: number | null; last_longitude?: number | null;
+};
+
+type RouteStop = { stopId: string; name: string; nameSi?: string; lat: number; lng: number; sequenceNo: number };
+type RouteDetail = { route_name?: string; start_point?: string; end_point?: string; stops: RouteStop[] };
+
+type TripSummary = {
+  status: string; distance_km: number; duration_min: number | null; avg_speed_kmh: number | null;
+  fixes_count: number; passengers: number | null;
 };
 
 export default function DriverActiveTripScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [trip, setTrip] = useState<Trip | null>(null);
-  const [routeName, setRouteName] = useState("");
+  const [route, setRoute] = useState<RouteDetail | null>(null);
+  const [summary, setSummary] = useState<TripSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<SharingMode | null>(null);
   const [lastFix, setLastFix] = useState<{ status: number; at: number } | null>(null);
   const [, setTick] = useState(0);
   const resumed = useRef(false);
+
+  const routeName = route ? route.route_name || `${route.start_point} → ${route.end_point}` : "";
 
   const load = useCallback(async () => {
     try {
@@ -42,8 +54,14 @@ export default function DriverActiveTripScreen() {
 
   useEffect(() => {
     if (!trip) return;
-    apiJson(`/routes/${trip.route_id}`).then(({ ok, data }) => { if (ok) setRouteName(`${data.start_point} → ${data.end_point}`); }).catch(() => {});
+    apiJson(`/routes/${trip.route_id}`).then(({ ok, data }) => { if (ok) setRoute(data); }).catch(() => {});
   }, [trip?.route_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Finished trips show a distance/duration summary instead of live controls; fetched once, not polled.
+  useEffect(() => {
+    if (!trip || !["completed", "cancelled"].includes(trip.status)) return;
+    apiJson(`/trips/${trip.id}/summary`).then(({ ok, data }) => { if (ok) setSummary(data); }).catch(() => {});
+  }, [trip?.id, trip?.status]);
 
   // Location is collected only while the trip is running; a trip that is already running resumes sharing
   const begin = useCallback(async (tripId: string) => {
@@ -146,6 +164,36 @@ export default function DriverActiveTripScreen() {
             </View>
           )}
 
+          {running && !!route?.stops?.length && (
+            <View style={[styles.card, styles.mapCard]}>
+              <MapView
+                style={styles.map}
+                provider={mapProvider}
+                pointerEvents="none"
+                initialRegion={{
+                  latitude: trip.last_latitude ?? route.stops[0].lat,
+                  longitude: trip.last_longitude ?? route.stops[0].lng,
+                  latitudeDelta: 0.12,
+                  longitudeDelta: 0.12,
+                }}
+              >
+                <Polyline
+                  coordinates={route.stops.slice().sort((a, b) => a.sequenceNo - b.sequenceNo).map((s) => ({ latitude: s.lat, longitude: s.lng }))}
+                  strokeColor="#1a3cff"
+                  strokeWidth={3}
+                />
+                {trip.last_latitude != null && trip.last_longitude != null && (
+                  <Marker coordinate={{ latitude: trip.last_latitude, longitude: trip.last_longitude }}>
+                    <View style={styles.busMarker}><Ionicons name="bus" size={13} color="#fff" /></View>
+                  </Marker>
+                )}
+              </MapView>
+              <Text style={styles.mapCaption}>
+                {stopLabel(route.stops[0])} → {stopLabel(route.stops[route.stops.length - 1])}
+              </Text>
+            </View>
+          )}
+
           {trip.status === "scheduled" && (
             <TouchableOpacity disabled={busy} onPress={() => changeStatus("running")}>
               <LinearGradient colors={["#43a047", "#2e7d32"]} style={[styles.bigButton, busy && { opacity: 0.6 }]}>
@@ -165,10 +213,42 @@ export default function DriverActiveTripScreen() {
           )}
 
           {(trip.status === "completed" || trip.status === "cancelled") && (
-            <Text style={styles.missing}>This trip is {trip.status}.</Text>
+            <View style={styles.card}>
+              <View style={styles.summaryHeader}>
+                <Ionicons name={trip.status === "completed" ? "checkmark-circle" : "close-circle"} size={18} color={trip.status === "completed" ? "#4caf50" : "#f44336"} />
+                <Text style={styles.summaryHeaderText}>This trip is {trip.status}.</Text>
+              </View>
+              {!summary ? (
+                <ActivityIndicator size="small" color="#1a3cff" style={{ marginTop: 10 }} />
+              ) : (
+                <View style={styles.summaryGrid}>
+                  <SummaryStat icon="navigate-outline" label="Distance" value={`${summary.distance_km} km`} />
+                  <SummaryStat icon="time-outline" label="Duration" value={summary.duration_min != null ? formatDuration(summary.duration_min) : "—"} />
+                  <SummaryStat icon="speedometer-outline" label="Avg speed" value={summary.avg_speed_kmh != null ? `${summary.avg_speed_kmh} km/h` : "—"} />
+                  <SummaryStat icon="people-outline" label="Passengers" value={summary.passengers != null ? String(summary.passengers) : "—"} />
+                </View>
+              )}
+            </View>
           )}
         </ScrollView>
       )}
+    </View>
+  );
+}
+
+function formatDuration(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
+function SummaryStat({ icon, label, value }: { icon: string; label: string; value: string }) {
+  return (
+    <View style={styles.summaryStat}>
+      <Ionicons name={icon as any} size={18} color="#1a3cff" />
+      <Text style={styles.summaryValue}>{value}</Text>
+      <Text style={styles.summaryLabel}>{label}</Text>
     </View>
   );
 }
@@ -196,4 +276,16 @@ const styles = StyleSheet.create({
   tip: { fontSize: 12, color: "#aaa", marginTop: 4 },
   bigButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, borderRadius: 16, paddingVertical: 20 },
   bigButtonText: { color: "#fff", fontSize: 20, fontWeight: "bold" },
+
+  mapCard: { padding: 0, overflow: "hidden" },
+  map: { height: 180, width: "100%" },
+  mapCaption: { fontSize: 12, color: "#888", padding: 10 },
+  busMarker: { width: 26, height: 26, borderRadius: 13, backgroundColor: "#1a3cff", alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "#fff" },
+
+  summaryHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
+  summaryHeaderText: { fontSize: 15, fontWeight: "700", color: "#1a1a4e" },
+  summaryGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 6 },
+  summaryStat: { flexBasis: "47%", backgroundColor: "#f0f4ff", borderRadius: 12, padding: 12, alignItems: "flex-start", gap: 4 },
+  summaryValue: { fontSize: 16, fontWeight: "bold", color: "#1a1a4e" },
+  summaryLabel: { fontSize: 11, color: "#888" },
 });

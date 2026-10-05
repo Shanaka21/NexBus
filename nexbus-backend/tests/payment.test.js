@@ -1,5 +1,3 @@
-jest.mock('../config/firebase', () => require('./helpers/firebase'));
-
 process.env.PAYHERE_MERCHANT_ID = '1211149';
 process.env.PAYHERE_MERCHANT_SECRET = 'test-secret';
 const crypto = require('crypto');

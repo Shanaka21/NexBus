@@ -2,7 +2,8 @@
 // Safe to run again: stops, routes, vehicles and accounts are overwritten with the same ids, and
 // trips are created only when they do not exist yet, so live trip state and seat counts are kept.
 require('dotenv').config();
-const { db, auth } = require('./config/firebase');
+const bcrypt = require('bcryptjs');
+const { pool } = require('./config/db');
 
 const OPERATORS = [
   { id: 'op-city', name: 'Colombo City Bus Services', registration_no: 'NCBS-001', contact_phone: '0112345678', email: 'ops@citybus.lk' },
@@ -55,9 +56,6 @@ const ROUTES = [
   { id: 'rE01', number: 'E01', type: 'expressway', fare: 1100, minutes: 150, stops: ['fort', 'maharagama', 'kottawa', 'galle'] }
 ];
 
-// Routes written by the previous seed script that have no stop data
-const OBSOLETE_ROUTES = ['r006', 'r002', 'r014', 'r100', 'r187', 'r154', 'r177', 'r190'];
-
 // registration number, route id, seat capacity, reservable seats, operator id
 const VEHICLES = [
   ['NB-4521', 'r138', 54, 20, 'op-city'], ['NB-4522', 'r138', 54, 20, 'op-city'], ['NB-4523', 'r138', 54, 0, 'op-city'],
@@ -94,45 +92,52 @@ function colomboMidnight(now = Date.now()) {
   return Math.floor((now + COLOMBO_OFFSET) / DAY_MS) * DAY_MS - COLOMBO_OFFSET;
 }
 
-async function commit(writes) {
-  for (let i = 0; i < writes.length; i += 400) {
-    const batch = db.batch();
-    writes.slice(i, i + 400).forEach(fn => fn(batch));
-    await batch.commit();
-  }
-}
+const crypto = require('crypto');
 
 async function ensureAccount(a) {
-  let user;
-  try {
-    user = await auth.getUserByEmail(a.email);
-    await auth.updateUser(user.uid, { password: a.password, displayName: a.full_name, disabled: false });
-  } catch (e) {
-    if (e.code !== 'auth/user-not-found') throw e;
-    user = await auth.createUser({ email: a.email, password: a.password, displayName: a.full_name });
+  const passwordHash = await bcrypt.hash(a.password, 10);
+  const existing = await pool.query('SELECT id FROM users WHERE email = $1', [a.email]);
+  if (existing.rows[0]) {
+    const uid = existing.rows[0].id;
+    await pool.query(
+      'UPDATE users SET password_hash=$1, full_name=$2, phone=$3, role=$4, operator_id=$5, status=$6 WHERE id=$7',
+      [passwordHash, a.full_name, a.phone, a.role, a.operator_id || null, 'active', uid]
+    );
+    return uid;
   }
-  await auth.setCustomUserClaims(user.uid, { role: a.role, operatorId: a.operator_id || null });
-  await db.collection('users').doc(user.uid).set({
-    full_name: a.full_name, name: a.full_name, email: a.email, phone: a.phone, role: a.role,
-    operator_id: a.operator_id || null, status: 'active', preferred_language: 'en', created_at: Date.now()
-  }, { merge: true });
-  return user.uid;
+  const uid = crypto.randomUUID();
+  await pool.query(
+    `INSERT INTO users (id, email, password_hash, full_name, phone, role, operator_id, status, preferred_language, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,'active','en',$8)`,
+    [uid, a.email, passwordHash, a.full_name, a.phone, a.role, a.operator_id || null, Date.now()]
+  );
+  return uid;
 }
 
 async function seed() {
   const now = Date.now();
 
   console.log('Seeding operators and stops...');
-  await commit([
-    ...OPERATORS.map(({ id, ...data }) => (b) => b.set(db.collection('operators').doc(id), { ...data, status: 'active', created_at: now })),
-    ...STOPS.map(([id, name, name_si, latitude, longitude]) => (b) => b.set(db.collection('bus_stops').doc(id), { name, name_si, latitude, longitude, created_at: now }))
-  ]);
+  for (const o of OPERATORS) {
+    await pool.query(
+      `INSERT INTO operators (id, name, registration_no, contact_phone, email, status, created_at) VALUES ($1,$2,$3,$4,$5,'active',$6)
+       ON CONFLICT (id) DO UPDATE SET name=$2, registration_no=$3, contact_phone=$4, email=$5`,
+      [o.id, o.name, o.registration_no, o.contact_phone, o.email, now]
+    );
+  }
+  for (const [id, name, nameSi, latitude, longitude] of STOPS) {
+    await pool.query(
+      `INSERT INTO bus_stops (id, name, name_si, latitude, longitude, created_at) VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (id) DO UPDATE SET name=$2, name_si=$3, latitude=$4, longitude=$5`,
+      [id, name, nameSi, latitude, longitude, now]
+    );
+  }
   console.log(`  ✓ ${OPERATORS.length} operators, ${STOPS.length} stops`);
 
   console.log('Seeding routes...');
   const stopById = Object.fromEntries(STOPS.map(s => [s[0], s]));
   const routeDocs = {};
-  const routeWrites = ROUTES.map(r => {
+  for (const r of ROUTES) {
     let total = 0;
     const stops = r.stops.map((stopId, i) => {
       if (i > 0) total += haversine([stopById[r.stops[i - 1]][3], stopById[r.stops[i - 1]][4]], [stopById[stopId][3], stopById[stopId][4]]);
@@ -144,25 +149,35 @@ async function seed() {
       route_number: r.number, route_name: `${first} - ${last}`, start_point: first, end_point: last,
       via: r.stops.slice(1, -1).map(id => stopById[id][1]).slice(0, 3).join(', '),
       service_type: r.type, base_fare_lkr: r.fare, distance_km: Number(total.toFixed(2)),
-      estimated_duration_min: r.minutes, stops, status: 'active', created_at: now
+      estimated_duration_min: r.minutes, stops
     };
     routeDocs[r.id] = doc;
-    return (b) => b.set(db.collection('routes').doc(r.id), doc);
-  });
-  await commit([...routeWrites, ...OBSOLETE_ROUTES.map(id => (b) => b.delete(db.collection('routes').doc(id)))]);
-  console.log(`  ✓ ${ROUTES.length} routes (removed ${OBSOLETE_ROUTES.length} old routes without stops)`);
+    await pool.query(
+      `INSERT INTO routes (id, route_number, route_name, start_point, end_point, via, service_type, base_fare_lkr, distance_km, estimated_duration_min, status, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'active',$11)
+       ON CONFLICT (id) DO UPDATE SET route_number=$2, route_name=$3, start_point=$4, end_point=$5, via=$6, service_type=$7, base_fare_lkr=$8, distance_km=$9, estimated_duration_min=$10`,
+      [r.id, doc.route_number, doc.route_name, doc.start_point, doc.end_point, doc.via, doc.service_type, doc.base_fare_lkr, doc.distance_km, doc.estimated_duration_min, now]
+    );
+    await pool.query('DELETE FROM route_stops WHERE route_id = $1', [r.id]);
+    for (const s of stops) {
+      await pool.query('INSERT INTO route_stops (route_id, stop_id, sequence_no, distance_from_origin_km) VALUES ($1,$2,$3,$4)', [r.id, s.stop_id, s.sequence_no, s.distance_from_origin_km]);
+    }
+  }
+  console.log(`  ✓ ${ROUTES.length} routes`);
 
   console.log('Seeding vehicles...');
-  const oldVehicles = await db.collection('vehicles').get();
-  await commit([
-    ...oldVehicles.docs.map(d => (b) => b.delete(d.ref)),
-  ]);
-  await commit(VEHICLES.map(([reg, routeId, capacity, reservable, operatorId]) => (b) => b.set(db.collection('vehicles').doc(reg), {
-    registration_no: reg, bus_number: reg, operator_id: operatorId, route_id: routeId,
-    route_number: routeDocs[routeId].route_number, seat_capacity: capacity, capacity, reservable_seats: reservable,
-    booked_seats: 0, status: 'active', delay_minutes: 0, current_trip_id: null, created_at: now
-  })));
-  console.log(`  ✓ ${VEHICLES.length} vehicles (cleared ${oldVehicles.size} old)`);
+  // Upsert (not delete + recreate): trips/bookings/payments reference vehicles by foreign key, and unlike
+  // Firestore, Postgres enforces that — wiping vehicles that already have trips would fail. This also
+  // preserves any live vehicle state (position, status) across reseeds, same as operators/routes above.
+  for (const [reg, routeId, capacity, reservable, operatorId] of VEHICLES) {
+    await pool.query(
+      `INSERT INTO vehicles (id, operator_id, route_id, seat_capacity, reservable_seats, booked_seats, status, delay_minutes, created_at)
+       VALUES ($1,$2,$3,$4,$5,0,'active',0,$6)
+       ON CONFLICT (id) DO UPDATE SET operator_id=$2, route_id=$3, seat_capacity=$4, reservable_seats=$5`,
+      [reg, operatorId, routeId, capacity, reservable, now]
+    );
+  }
+  console.log(`  ✓ ${VEHICLES.length} vehicles`);
 
   console.log('Seeding accounts...');
   const uids = {};
@@ -175,8 +190,7 @@ async function seed() {
   const driverFor = { 'op-city': ['driver@nexbus.lk', 'driver2@nexbus.lk'], 'op-south': ['southdriver@nexbus.lk'] };
   const today = colomboMidnight(now);
   const slots = [7 * 60, 12 * 60 + 30, 17 * 60 + 30]; // minutes after midnight
-  const tripWrites = [];
-  const existing = new Set((await db.collection('trips').get()).docs.map(d => d.id));
+  const existing = new Set((await pool.query('SELECT id FROM trips')).rows.map(r => r.id));
   const driverNames = Object.fromEntries(ACCOUNTS.map(a => [a.email, a.full_name]));
 
   const tripDoc = (vehicleIndex, scheduled) => {
@@ -191,58 +205,75 @@ async function seed() {
     };
   };
 
+  const insertTrip = async (id, t) => pool.query(
+    `INSERT INTO trips (id, route_id, route_number, vehicle_id, registration_no, operator_id, driver_id, driver_name,
+       scheduled_departure, service_date, actual_departure, direction, status, delay_minutes, reservable_seats, available_seats, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+    [id, t.route_id, t.route_number, t.vehicle_id, t.registration_no, t.operator_id, t.driver_id, t.driver_name,
+      t.scheduled_departure, t.service_date, t.actual_departure, t.direction, t.status, t.delay_minutes, t.reservable_seats, t.available_seats, t.created_at]
+  );
+
   const dayKey = (ms) => new Date(ms + COLOMBO_OFFSET).toISOString().slice(0, 10).replace(/-/g, '');
-  VEHICLES.forEach((v, vi) => {
+  let newTrips = 0;
+  for (let vi = 0; vi < VEHICLES.length; vi++) {
     for (let day = 0; day < 7; day++) {
-      slots.forEach((minutes, si) => {
-        const scheduled = today + day * DAY_MS + (minutes + vi * 6) * 60000;
-        if (scheduled < now) return;
-        const id = `seed-${v[0]}-${dayKey(today + day * DAY_MS)}-${si}`;
-        if (!existing.has(id)) tripWrites.push((b) => b.set(db.collection('trips').doc(id), tripDoc(vi, scheduled)));
-      });
+      for (let si = 0; si < slots.length; si++) {
+        const scheduled = today + day * DAY_MS + (slots[si] + vi * 6) * 60000;
+        if (scheduled < now) continue;
+        const id = `seed-${VEHICLES[vi][0]}-${dayKey(today + day * DAY_MS)}-${si}`;
+        if (!existing.has(id)) { await insertTrip(id, tripDoc(vi, scheduled)); newTrips++; }
+      }
     }
     // a bus about to leave, so the demo always has upcoming trips
-    const demoId = `seed-${v[0]}-${dayKey(today)}-demo`;
-    if (!existing.has(demoId)) tripWrites.push((b) => b.set(db.collection('trips').doc(demoId), tripDoc(vi, now + (10 + vi * 3) * 60000)));
-  });
-  await commit(tripWrites);
-  console.log(`  ✓ ${tripWrites.length} new trips`);
+    const demoId = `seed-${VEHICLES[vi][0]}-${dayKey(today)}-demo`;
+    if (!existing.has(demoId)) { await insertTrip(demoId, tripDoc(vi, now + (10 + vi * 3) * 60000)); newTrips++; }
+  }
+  console.log(`  ✓ ${newTrips} new trips`);
 
   console.log('Seeding demo bookings...');
   const demoUid = uids['demo@nexbus.lk'];
   const upcomingId = `seed-NB-4521-${dayKey(today)}-demo`;
   const pastTripId = 'seed-past-r122';
   const pastTrip = { ...tripDoc(3, now - 2 * DAY_MS), status: 'completed', actual_departure: now - 2 * DAY_MS, available_seats: 16 };
+  const pastExisted = existing.has(pastTripId);
+  if (pastExisted) {
+    await pool.query('UPDATE trips SET status=$1, actual_departure=$2, available_seats=$3 WHERE id=$4', [pastTrip.status, pastTrip.actual_departure, pastTrip.available_seats, pastTripId]);
+  } else {
+    await insertTrip(pastTripId, pastTrip);
+  }
+
   const bookings = [
     { key: 0, trip: upcomingId, route: 'r138', from: 'pettah', to: 'nugegoda', seats: 2, status: 'confirmed', pay: 'success', age: 0, seatsHeld: true },
     { key: 1, trip: pastTripId, route: 'r122', from: 'pettah', to: 'kaduwela', seats: 1, status: 'completed', pay: 'success', age: 2 },
     { key: 2, trip: pastTripId, route: 'r122', from: 'borella', to: 'hanwella', seats: 3, status: 'cancelled', pay: 'unpaid', age: 5 }
   ];
-  await db.collection('trips').doc(pastTripId).set(pastTrip);
-  await db.collection('bookings').doc(`demo-${demoUid}-3`).delete(); // old-format booking from the previous seed
   for (const bk of bookings) {
-    const ref = db.collection('bookings').doc(`demo-${demoUid}-${bk.key}`);
-    const wasThere = (await ref.get()).exists;
+    const id = `demo-${demoUid}-${bk.key}`;
+    const wasThere = (await pool.query('SELECT id FROM bookings WHERE id = $1', [id])).rows[0];
     const r = routeDocs[bk.route];
-    const tripRef = db.collection('trips').doc(bk.trip);
-    const trip = (await tripRef.get()).data();
+    const trip = (await pool.query('SELECT * FROM trips WHERE id = $1', [bk.trip])).rows[0];
     const amount = r.base_fare_lkr * bk.seats;
-    await ref.set({
-      booking_reference: `NBDEMO${bk.key}`, user_id: demoUid, trip_id: bk.trip, route_id: bk.route, route_number: r.route_number,
-      vehicle_id: trip.vehicle_id, operator_id: trip.operator_id, boarding_stop_id: bk.from, alighting_stop_id: bk.to,
-      from: stopById[bk.from][1], to: stopById[bk.to][1], seat_count: bk.seats, fare_amount_lkr: amount,
-      booking_status: bk.status, status: bk.status, payment_status: bk.pay, hold_expires_at: 0,
-      scheduled_departure: trip.scheduled_departure, created_at: now - bk.age * DAY_MS, created_day: colomboDay(now - bk.age * DAY_MS)
-    });
+    const createdAt = now - bk.age * DAY_MS;
+    await pool.query(
+      `INSERT INTO bookings (id, booking_reference, user_id, trip_id, route_id, route_number, vehicle_id, operator_id,
+         boarding_stop_id, alighting_stop_id, from_name, to_name, seat_count, fare_amount_lkr, status, payment_status,
+         hold_expires_at, scheduled_departure, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,0,$17,$18)
+       ON CONFLICT (id) DO UPDATE SET status=$15, payment_status=$16`,
+      [id, `NBDEMO${bk.key}`, demoUid, bk.trip, bk.route, r.route_number, trip.vehicle_id, trip.operator_id,
+        bk.from, bk.to, stopById[bk.from][1], stopById[bk.to][1], bk.seats, amount, bk.status, bk.pay,
+        Number(trip.scheduled_departure), createdAt]
+    );
     if (bk.pay === 'success') {
-      await db.collection('payments').doc(`demo-pay-${bk.key}`).set({
-        booking_id: ref.id, order_id: `demo-pay-${bk.key}`, user_id: demoUid, operator_id: trip.operator_id,
-        amount_lkr: amount, currency: 'LKR', payment_status: 'success', status_code: 2, method: 'VISA',
-        gateway_payment_id: `DEMO${bk.key}`, created_at: now - bk.age * DAY_MS, updated_at: now - bk.age * DAY_MS,
-        created_day: colomboDay(now - bk.age * DAY_MS), paid_day: colomboDay(now - bk.age * DAY_MS)
-      });
+      const payId = `demo-pay-${bk.key}`;
+      await pool.query(
+        `INSERT INTO payments (id, booking_id, user_id, operator_id, amount_lkr, currency, payment_status, status_code, method, gateway_payment_id, created_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,'LKR','success',2,'VISA',$6,$7,$7)
+         ON CONFLICT (id) DO NOTHING`,
+        [payId, id, demoUid, trip.operator_id, amount, `DEMO${bk.key}`, createdAt]
+      );
     }
-    if (bk.seatsHeld && !wasThere) await tripRef.update({ available_seats: trip.available_seats - bk.seats });
+    if (bk.seatsHeld && !wasThere) await pool.query('UPDATE trips SET available_seats = available_seats - $1 WHERE id = $2', [bk.seats, bk.trip]);
   }
   console.log(`  ✓ ${bookings.length} demo bookings`);
 

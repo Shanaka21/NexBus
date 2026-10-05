@@ -56,6 +56,14 @@
     {
       "key": "internalJobToken",
       "value": ""
+    },
+    {
+      "key": "resetToken",
+      "value": ""
+    },
+    {
+      "key": "googleIdToken",
+      "value": ""
     }
   ],
   "item": [
@@ -297,24 +305,54 @@
           }
         },
         {
-          "name": "Firebase custom token",
+          "name": "Reset password",
           "request": {
-            "method": "GET",
+            "method": "POST",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{passengerToken}}"
+                "key": "Content-Type",
+                "value": "application/json"
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/auth/firebase-token",
+              "raw": "{{baseUrl}}/auth/reset-password",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "auth",
-                "firebase-token"
+                "reset-password"
               ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{resetToken}}\",\n  \"password\": \"NewSecret@123\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Google sign-in",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/google",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "google"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id_token\": \"{{googleIdToken}}\"\n}"
             }
           }
         }
@@ -831,6 +869,29 @@
                 "trips",
                 "{{tripId}}",
                 "availability"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Trip summary (distance/duration)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{driverToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/trips/{{tripId}}/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "trips",
+                "{{tripId}}",
+                "summary"
               ]
             }
           }

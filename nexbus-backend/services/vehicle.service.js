@@ -1,4 +1,4 @@
-const { db } = require('../config/firebase');
+const { pool } = require('../config/db');
 const { AppError } = require('../utils/errors');
 const eta = require('./eta.service');
 const routeService = require('./route.service');
@@ -6,16 +6,16 @@ const arrival = require('./arrival.service');
 const cache = require('./cache');
 
 function format(id, v) {
-  const lastUpdate = v.last_update_at || null;
+  const lastUpdate = v.last_update_at ? Number(v.last_update_at) : null;
   return {
     id,
-    registration_no: v.registration_no || v.bus_number,
-    bus_number: v.bus_number || v.registration_no,
+    registration_no: id,
+    bus_number: id,
     operator_id: v.operator_id || null,
     route_id: v.route_id || null,
     route_number: v.route_number,
-    seat_capacity: v.seat_capacity || v.capacity || 0,
-    capacity: v.seat_capacity || v.capacity || 0,
+    seat_capacity: v.seat_capacity || 0,
+    capacity: v.seat_capacity || 0,
     reservable_seats: v.reservable_seats || 0,
     status: v.status || 'active',
     current_trip_id: v.current_trip_id || null,
@@ -30,9 +30,10 @@ function format(id, v) {
 
 // Fleet list for operators (own company) and administrators (all)
 async function listFleet(user) {
-  const col = db.collection('vehicles');
-  const snap = user.role === 'operator' ? await col.where('operator_id', '==', user.operatorId).get() : await col.get();
-  return snap.docs.map(d => format(d.id, d.data()));
+  const { rows } = user.role === 'operator'
+    ? await pool.query('SELECT v.*, r.route_number FROM vehicles v LEFT JOIN routes r ON r.id = v.route_id WHERE v.operator_id = $1', [user.operatorId])
+    : await pool.query('SELECT v.*, r.route_number FROM vehicles v LEFT JOIN routes r ON r.id = v.route_id');
+  return rows.map((r) => format(r.id, r));
 }
 
 // Public read model used by the passenger live map (no company-private fields)
@@ -41,8 +42,8 @@ function publicBuses() {
 }
 
 async function buildPublicBuses() {
-  const [vehicleSnap, activeTrips, routes] = await Promise.all([
-    db.collection('vehicles').get(),
+  const [vehicleRows, activeTrips, routes] = await Promise.all([
+    pool.query('SELECT v.*, r.route_number FROM vehicles v LEFT JOIN routes r ON r.id = v.route_id'),
     arrival.activeTrips(),
     routeService.allRoutes({ includeInactive: true })
   ]);
@@ -53,11 +54,11 @@ async function buildPublicBuses() {
     .sort((a, b) => (a.status === 'running' ? -1 : 1) - (b.status === 'running' ? -1 : 1) || a.scheduled_departure - b.scheduled_departure)
     .forEach(t => { if (!tripByVehicle[t.vehicle_id]) tripByVehicle[t.vehicle_id] = t; });
 
-  return vehicleSnap.docs.map(d => {
-    const v = format(d.id, d.data());
+  return vehicleRows.rows.map(d => {
+    const v = format(d.id, d);
     const trip = tripByVehicle[d.id];
     const route = routeMap[v.route_id] || {};
-    const booked = trip && trip.reservable_seats ? trip.reservable_seats - trip.available_seats : (d.data().booked_seats || 0);
+    const booked = trip && trip.reservable_seats ? trip.reservable_seats - trip.available_seats : (d.booked_seats || 0);
     return {
       id: d.id,
       bus_number: v.bus_number,
@@ -82,22 +83,20 @@ async function buildPublicBuses() {
 function liveFleet(user) {
   const scope = user.role === 'operator' ? user.operatorId : 'all';
   return cache.cached(`fleet:${scope}`, async () => {
-    let vehicleQuery = db.collection('vehicles');
-    let tripQuery = db.collection('trips').where('status', '==', 'running');
-    if (scope !== 'all') {
-      vehicleQuery = vehicleQuery.where('operator_id', '==', scope);
-      tripQuery = tripQuery.where('operator_id', '==', scope);
-    }
-    const [vehicles, trips] = await Promise.all([vehicleQuery.get(), tripQuery.get()]);
+    const vehicleSql = scope === 'all'
+      ? 'SELECT v.*, r.route_number FROM vehicles v LEFT JOIN routes r ON r.id = v.route_id'
+      : 'SELECT v.*, r.route_number FROM vehicles v LEFT JOIN routes r ON r.id = v.route_id WHERE v.operator_id = $1';
+    const tripSql = scope === 'all'
+      ? "SELECT * FROM trips WHERE status = 'running'"
+      : "SELECT * FROM trips WHERE status = 'running' AND operator_id = $1";
+    const params = scope === 'all' ? [] : [scope];
+    const [vehicles, trips] = await Promise.all([pool.query(vehicleSql, params), pool.query(tripSql, params)]);
     return {
-      vehicles: vehicles.docs.map(d => format(d.id, d.data())),
-      trips: trips.docs.map(d => {
-        const t = d.data();
-        return {
-          id: d.id, vehicle_id: t.vehicle_id, route_number: t.route_number, driver_name: t.driver_name,
-          reservable_seats: t.reservable_seats || 0, available_seats: t.available_seats || 0, delay_minutes: t.delay_minutes || 0
-        };
-      })
+      vehicles: vehicles.rows.map(d => format(d.id, d)),
+      trips: trips.rows.map(t => ({
+        id: t.id, vehicle_id: t.vehicle_id, route_number: t.route_number, driver_name: t.driver_name,
+        reservable_seats: t.reservable_seats || 0, available_seats: t.available_seats || 0, delay_minutes: t.delay_minutes || 0
+      }))
     };
   });
 }
@@ -110,51 +109,53 @@ async function getBus(id) {
 }
 
 async function ownVehicle(user, id) {
-  const ref = db.collection('vehicles').doc(id);
-  const doc = await ref.get();
-  if (!doc.exists) throw new AppError(404, 'VEHICLE_NOT_FOUND', 'Vehicle not found');
-  if (doc.data().operator_id !== user.operatorId) throw new AppError(403, 'FORBIDDEN', 'This vehicle belongs to another company');
-  return { ref, data: doc.data() };
+  const { rows } = await pool.query('SELECT * FROM vehicles WHERE id = $1', [id]);
+  if (!rows[0]) throw new AppError(404, 'VEHICLE_NOT_FOUND', 'Vehicle not found');
+  if (rows[0].operator_id !== user.operatorId) throw new AppError(403, 'FORBIDDEN', 'This vehicle belongs to another company');
+  return rows[0];
 }
 
 async function createVehicle(user, dto) {
   const route = await routeService.getRoute(dto.route_id);
-  const data = {
-    registration_no: dto.registration_no,
-    bus_number: dto.registration_no,
-    operator_id: user.operatorId,
-    route_id: dto.route_id,
-    route_number: route.route_number,
-    seat_capacity: dto.seat_capacity,
-    capacity: dto.seat_capacity,
-    reservable_seats: dto.reservable_seats,
-    booked_seats: 0,
-    status: 'active',
-    delay_minutes: 0,
-    created_at: Date.now()
-  };
-  const dup = await db.collection('vehicles').where('registration_no', '==', dto.registration_no).get();
-  if (!dup.empty) throw new AppError(409, 'REGISTRATION_IN_USE', 'A vehicle with this registration number already exists');
-  const ref = await db.collection('vehicles').add(data);
-  return format(ref.id, data);
+  const now = Date.now();
+  try {
+    await pool.query(
+      `INSERT INTO vehicles (id, operator_id, route_id, seat_capacity, reservable_seats, booked_seats, status, delay_minutes, created_at)
+       VALUES ($1, $2, $3, $4, $5, 0, 'active', 0, $6)`,
+      [dto.registration_no, user.operatorId, dto.route_id, dto.seat_capacity, dto.reservable_seats, now]
+    );
+  } catch (err) {
+    if (err.code === '23505') throw new AppError(409, 'REGISTRATION_IN_USE', 'A vehicle with this registration number already exists');
+    throw err;
+  }
+  return format(dto.registration_no, { operator_id: user.operatorId, route_id: dto.route_id, route_number: route.route_number, seat_capacity: dto.seat_capacity, reservable_seats: dto.reservable_seats, status: 'active', delay_minutes: 0 });
 }
 
 async function updateVehicle(user, id, dto) {
-  const { ref, data } = await ownVehicle(user, id);
-  const patch = { ...dto };
-  if (dto.route_id) patch.route_number = (await routeService.getRoute(dto.route_id)).route_number;
-  if (dto.registration_no) patch.bus_number = dto.registration_no;
-  if (dto.seat_capacity) patch.capacity = dto.seat_capacity;
-  const capacity = patch.seat_capacity || data.seat_capacity || data.capacity;
-  const reservable = patch.reservable_seats ?? data.reservable_seats ?? 0;
+  const data = await ownVehicle(user, id);
+  if (dto.route_id) await routeService.getRoute(dto.route_id); // 404s if the route doesn't exist
+  const capacity = dto.seat_capacity || data.seat_capacity;
+  const reservable = dto.reservable_seats ?? data.reservable_seats ?? 0;
   if (reservable > capacity) throw new AppError(400, 'VALIDATION_ERROR', 'Reservable seats cannot exceed seat capacity');
-  await ref.update(patch);
-  return format(id, { ...data, ...patch });
+
+  const sets = [];
+  const values = [];
+  const add = (col, val) => { values.push(val); sets.push(`${col} = $${values.length}`); };
+  if (dto.route_id) add('route_id', dto.route_id);
+  if (dto.seat_capacity) add('seat_capacity', dto.seat_capacity);
+  if (dto.reservable_seats !== undefined) add('reservable_seats', dto.reservable_seats);
+  if (dto.status) add('status', dto.status);
+  if (sets.length) {
+    values.push(id);
+    await pool.query(`UPDATE vehicles SET ${sets.join(', ')} WHERE id = $${values.length}`, values);
+  }
+  const { rows } = await pool.query('SELECT v.*, r.route_number FROM vehicles v LEFT JOIN routes r ON r.id = v.route_id WHERE v.id = $1', [id]);
+  return format(id, rows[0]);
 }
 
 async function setStatus(user, id, status) {
-  const { ref } = await ownVehicle(user, id);
-  await ref.update({ status });
+  await ownVehicle(user, id);
+  await pool.query('UPDATE vehicles SET status = $1 WHERE id = $2', [status, id]);
   return { message: 'Bus status updated', status };
 }
 

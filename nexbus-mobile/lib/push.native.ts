@@ -2,9 +2,10 @@ import { Platform } from "react-native";
 import Constants from "expo-constants";
 import { apiFetch, jsonBody } from "./api";
 
-// Registers this device for push notifications and sends the device (FCM) token to the backend.
-// Best effort: push needs a development build with Firebase configured, so failures are ignored
-// and the in-app notification list keeps working.
+// Registers this device for push notifications and sends its Expo push token to the backend, which
+// delivers pushes through Expo's push service (https://exp.host) rather than talking to FCM/APNs directly.
+// Best effort: push needs a development/production build, so failures are ignored and the in-app
+// notification list keeps working.
 export async function registerForPush(): Promise<void> {
   // Expo Go on Android no longer supports remote push (SDK 53+); loading the module there only logs an error
   if (Platform.OS === "android" && Constants.appOwnership === "expo") return;
@@ -20,8 +21,9 @@ export async function registerForPush(): Promise<void> {
     });
     const permission = await Notifications.requestPermissionsAsync();
     if (permission.status !== "granted") return;
-    const token = await Notifications.getDevicePushTokenAsync();
-    await apiFetch("/users/me", { method: "PATCH", ...jsonBody({ fcm_token: String(token.data) }) });
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+    const token = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
+    await apiFetch("/users/me", { method: "PATCH", ...jsonBody({ push_token: token.data }) });
   } catch {
     /* push is optional */
   }

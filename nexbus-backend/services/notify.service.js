@@ -1,28 +1,34 @@
-const { db, messaging, FieldValue } = require('../config/firebase');
+const crypto = require('crypto');
+const { pool } = require('../config/db');
 
-// Writes the in-app notification, then tries to push it through FCM.
+// Writes the in-app notification, then tries to push it through Expo's push service.
 async function sendToUser(userId, { type, title, message, relatedTripId = null, relatedBookingId = null }) {
   try {
-    await db.collection('notifications').add({
-      user_id: userId, type, title, message,
-      related_trip_id: relatedTripId, related_booking_id: relatedBookingId,
-      is_read: false, created_at: Date.now()
-    });
+    const id = crypto.randomUUID();
+    await pool.query(
+      'INSERT INTO notifications (id, user_id, type, title, message, related_trip_id, related_booking_id, is_read, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,false,$8)',
+      [id, userId, type, title, message, relatedTripId, relatedBookingId, Date.now()]
+    );
 
-    const user = (await db.collection('users').doc(userId).get()).data();
-    if (!user?.fcm_token) return;
+    const { rows } = await pool.query('SELECT push_token FROM users WHERE id = $1', [userId]);
+    const pushToken = rows[0]?.push_token;
+    if (!pushToken) return;
     try {
-      await messaging.send({
-        token: user.fcm_token,
-        notification: { title, body: message },
-        data: { type, tripId: relatedTripId || '', bookingId: relatedBookingId || '' }
+      const res = await fetch('https://exp.host/--/api/v2/push/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          to: pushToken, title, body: message,
+          data: { type, tripId: relatedTripId || '', bookingId: relatedBookingId || '' }
+        })
       });
-    } catch (err) {
-      // Stale tokens are removed so the failed delivery is not repeated
-      if (err.code === 'messaging/registration-token-not-registered' ||
-          err.code === 'messaging/invalid-registration-token') {
-        await db.collection('users').doc(userId).update({ fcm_token: FieldValue.delete() });
+      const data = await res.json();
+      const ticket = data?.data;
+      if (ticket?.status === 'error' && ticket.details?.error === 'DeviceNotRegistered') {
+        await pool.query('UPDATE users SET push_token = NULL WHERE id = $1', [userId]);
       }
+    } catch (err) {
+      console.error('push send failed:', err.message);
     }
   } catch (err) {
     console.error('notification failed:', err.message);
@@ -30,41 +36,31 @@ async function sendToUser(userId, { type, title, message, relatedTripId = null, 
 }
 
 async function delayAlert(tripId, delay) {
-  const snap = await db.collection('bookings')
-    .where('trip_id', '==', tripId)
-    .where('booking_status', '==', 'confirmed').get();
-  await Promise.all(snap.docs.map(d => sendToUser(d.data().user_id, {
+  const { rows } = await pool.query("SELECT user_id, id FROM bookings WHERE trip_id = $1 AND status = 'confirmed'", [tripId]);
+  await Promise.all(rows.map(b => sendToUser(b.user_id, {
     type: 'delay_alert',
     title: 'Your bus is delayed',
     message: `Your booked bus is running about ${delay} minutes late.`,
     relatedTripId: tripId,
-    relatedBookingId: d.id
+    relatedBookingId: b.id
   })));
 }
 
 async function listForUser(userId) {
-  const snap = await db.collection('notifications').where('user_id', '==', userId).limit(200).get();
-  return snap.docs
-    .map(d => ({ id: d.id, ...d.data() }))
-    .sort((a, b) => b.created_at - a.created_at)
-    .slice(0, 100);
+  const { rows } = await pool.query('SELECT * FROM notifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100', [userId]);
+  return rows.map(n => ({ ...n, created_at: Number(n.created_at) }));
 }
 
 async function markRead(userId, id) {
-  const ref = db.collection('notifications').doc(id);
-  const doc = await ref.get();
-  if (!doc.exists || doc.data().user_id !== userId) return false;
-  await ref.update({ is_read: true });
+  const { rows } = await pool.query('SELECT user_id FROM notifications WHERE id = $1', [id]);
+  if (!rows[0] || rows[0].user_id !== userId) return false;
+  await pool.query('UPDATE notifications SET is_read = true WHERE id = $1', [id]);
   return true;
 }
 
 async function markAllRead(userId) {
-  const snap = await db.collection('notifications')
-    .where('user_id', '==', userId).where('is_read', '==', false).get();
-  const batch = db.batch();
-  snap.docs.forEach(d => batch.update(d.ref, { is_read: true }));
-  await batch.commit();
-  return snap.size;
+  const { rowCount } = await pool.query('UPDATE notifications SET is_read = true WHERE user_id = $1 AND is_read = false', [userId]);
+  return rowCount;
 }
 
 module.exports = { sendToUser, delayAlert, listForUser, markRead, markAllRead };

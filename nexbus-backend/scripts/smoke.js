@@ -144,6 +144,9 @@ async function login(email, password) {
 
   // --- driver finishes trip
   check('driver completes trip', (await call('PATCH', `/trips/${myTrip.id}/status`, { token: D, body: { status: 'completed' } })).status === 200);
+  const summary = await call('GET', `/trips/${myTrip.id}/summary`, { token: D });
+  check('trip summary has distance/duration', summary.status === 200 && typeof summary.data.distance_km === 'number' && summary.data.status === 'completed', JSON.stringify(summary.data));
+  check('passenger cannot read trip summary -> 403', (await call('GET', `/trips/${myTrip.id}/summary`, { token: P })).status === 403);
 
   // --- admin
   const logs = await call('GET', '/admin/logs?limit=300', { token: A });

@@ -16,9 +16,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as Google from "expo-auth-session/providers/google";
 import * as WebBrowser from "expo-web-browser";
 import { API_URL } from "../lib/config";
-import { apiFetch } from "../lib/api";
 import { setUserSession, clearSession } from "../lib/userSession";
-import { signInFirebase, firebaseIdTokenFromGoogle } from "../lib/firebaseSession";
 import { registerForPush } from "../lib/push";
 import { saveSession } from "../lib/sessionStore";
 import { useTheme } from "../lib/themeContext";
@@ -76,7 +74,7 @@ export default function LoginScreen() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const router = useRouter();
 
-  const [request, response, promptAsync] = Google.useAuthRequest({
+  const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
     webClientId: GOOGLE_WEB_CLIENT_ID,
     // The hook throws on Android without an Android client id; replace this with the one created for lk.nexbus.mobile
     androidClientId: GOOGLE_WEB_CLIENT_ID,
@@ -85,17 +83,21 @@ export default function LoginScreen() {
 
   useEffect(() => {
     if (response?.type === "success") {
-      const token = response.authentication?.accessToken;
-      if (!token) return;
+      const idToken = response.authentication?.idToken;
+      if (!idToken) return;
       setGoogleLoading(true);
-      // The Google token is exchanged for a Firebase session so the API accepts the user like any other account
-      firebaseIdTokenFromGoogle(token)
-        .then(async (user) => {
-          setUserSession(user.uid, user.name || "User", user.email || "", {
-            role: "passenger", idToken: user.idToken, refreshToken: user.refreshToken,
+      // The backend verifies the Google ID token itself and issues the same token pair as a password login
+      fetch(`${API_URL}/auth/google`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id_token: idToken }),
+      })
+        .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
+        .then(async ({ ok, data }) => {
+          if (!ok || !data.uid) throw new Error(data?.error || "Google sign-in failed");
+          setUserSession(data.uid, data.name || "User", data.email || "", {
+            role: data.role, operatorId: data.operator_id, idToken: data.idToken, refreshToken: data.refreshToken,
           });
-          const profile = await apiFetch("/users/me"); // creates the passenger profile on first sign-in
-          if (!profile.ok) throw new Error("profile");
           registerForPush();
           await saveSession();
           router.replace("/home");
@@ -130,7 +132,6 @@ export default function LoginScreen() {
         setUserSession(data.uid, data.name, data.email, {
           role: data.role, operatorId: data.operator_id, idToken: data.idToken, refreshToken: data.refreshToken,
         });
-        await signInFirebase(data.customToken); // enables the live map listeners
         if (rememberMe) await saveSession();
         registerForPush();
         router.replace((data.role === "driver" ? "/driver" : "/home") as any);

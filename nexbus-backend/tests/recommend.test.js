@@ -1,4 +1,3 @@
-jest.mock('../config/firebase', () => require('./helpers/firebase'));
 const { scoreTrip, rank, explain } = require('../services/recommend.service');
 
 const trip = (over) => ({
