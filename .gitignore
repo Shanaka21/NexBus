@@ -43,3 +43,7 @@ npm-debug.log*
 
 # Firebase emulator logs
 *-debug.log
+
+# Netlify environment variables import file (contains secrets)
+netlify.env
+**/netlify.env
