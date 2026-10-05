@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import {
-  View, Text, StyleSheet, TouchableOpacity, StatusBar, ScrollView, Platform, ActivityIndicator,
+  View, Text, StyleSheet, TouchableOpacity, StatusBar, ScrollView, Platform, ActivityIndicator, AppState,
 } from "react-native";
 import MapView, { Marker, mapProvider } from "../lib/maps";
 import { Ionicons } from "@expo/vector-icons";
@@ -70,12 +70,13 @@ export default function MapScreen() {
   };
 
   // Live positions arrive through a read-only Firestore listener. If the listener cannot be opened
-  // (no Firebase session, blocked network) the screen falls back to polling the API every 6 seconds.
+  // (no Firebase session, blocked network) the screen falls back to polling the API every 20 seconds (paused in the background).
   useEffect(() => {
     let poll: ReturnType<typeof setInterval> | null = null;
 
     const startPolling = () => {
       const load = async () => {
+        if (AppState.currentState !== "active") return;
         try {
           const { ok, data } = await apiJson("/buses");
           if (ok && Array.isArray(data)) {
@@ -89,7 +90,7 @@ export default function MapScreen() {
         setLoading(false);
       };
       load();
-      poll = setInterval(load, 6000);
+      poll = setInterval(load, 20000);
     };
 
     const unsubscribe = onSnapshot(

@@ -34,11 +34,11 @@ function tripEta(trip, route, stops, targetIndex, now = Date.now()) {
   };
 }
 
-// Running trips plus the scheduled trips of today and tomorrow (equality filters only). Cached for a few
-// seconds because every passenger screen polls these results.
+// Running trips plus the scheduled trips of today (and of tomorrow only when the 4 hour look-ahead crosses
+// midnight), using equality filters only. Cached because every passenger screen polls these results.
 function activeTrips() {
   return cache.cached('active-trips', async () => {
-    const days = [colomboDate(), colomboDate(Date.now() + 86400000)];
+    const days = [...new Set([colomboDate(), colomboDate(Date.now() + 4 * 3600 * 1000)])];
     const [running, scheduled] = await Promise.all([
       db.collection('trips').where('status', '==', 'running').get(),
       db.collection('trips').where('service_date', 'in', days).where('status', '==', 'scheduled').get()

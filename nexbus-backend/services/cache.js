@@ -3,7 +3,7 @@
 // which keeps the pilot inside the free Firestore quota.
 const store = new Map();
 
-const TTL_MS = Number(process.env.LIVE_CACHE_TTL_MS || 3000);
+const TTL_MS = Number(process.env.LIVE_CACHE_TTL_MS || 15000);
 
 async function cached(key, fn, ttlMs = TTL_MS) {
   const hit = store.get(key);

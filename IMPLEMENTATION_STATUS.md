@@ -18,7 +18,7 @@ Not verified: a real PayHere sandbox payment (needs your merchant account), push
 ## Needs your action
 
 1. **Firestore daily quota is used up on the real project** (my testing; the free plan allows 50,000 reads a day). It resets at midnight Pacific time, about 12:30 PM Sri Lanka time tomorrow. Until then the app works against the local emulators (`npm run emulators`, needs Java). Afterwards run `npm run seed` once, then `npm start`; a one-time backfill of the new day fields runs automatically.
-2. **Deploy the security rules, indexes and TTL policy**: `firebase deploy --only firestore` from `nexbus-backend`, then enable a TTL policy on `location_logs.expires_at` in the console. Until the rules are deployed, the live map and fleet monitor fall back to polling the API every 6 seconds (a real-time listener is faster and cheaper). The current project rules deny all client reads.
+2. **Deploy the security rules, indexes and TTL policy**: `firebase deploy --only firestore` from `nexbus-backend`, then enable a TTL policy on `location_logs.expires_at` in the console. Until the rules are deployed, the live map and fleet monitor fall back to polling the API every 20 seconds (a real-time listener is faster and cheaper). The current project rules deny all client reads.
 3. **PayHere sandbox**: put your merchant ID and secret in `nexbus-backend/.env` and give PayHere a public notify URL (Cloud Run or an ngrok tunnel). Until then use the built-in sandbox simulator (`PAYHERE_SIMULATE=true`), which sends a correctly signed notification through the same verification code.
 4. **Development build** (EAS) for the PayHere SDK, background GPS and push notifications; add `google-services.json` for push, and a Google Maps API key for the native map.
 5. **Deploy** the API: `Dockerfile` is ready for Cloud Run. Set `ENABLE_JOBS=false` and create a Cloud Scheduler job that calls `POST /internal/expire-holds` every minute with the `x-internal-token` header.
@@ -88,7 +88,7 @@ Also fixed along the way: React Native `Alert.alert` does nothing in the browser
 
 - Firestore fields are snake_case (`available_seats`), not camelCase as section 4.6.4 says. The vehicle status field is `status`, not `current_status`.
 - Trips have `service_date`, bookings `created_day`, payments `created_day` and `paid_day`. Queries read one day at a time with equality filters; this keeps the pilot inside the free Firestore quota.
-- Live results (`/buses`, `/vehicles/live`, arrivals) are cached for 3 seconds on the server and shared between clients.
+- Live results (`/buses`, `/vehicles/live`, arrivals) are cached for 15 seconds on the server and shared between clients.
 - The scheduler endpoint is protected by a shared token (`x-internal-token`), not an OIDC token as Listing 5.17 and section 5.10 say.
 - Passwords are checked with the Firebase Auth REST API through `POST /auth/login`. Section 4.7 says there is no login endpoint; the documentation should say the API has one (the token is still a Firebase ID token verified on every request).
 - Location logs are removed by the `expires_at` TTL policy and by a purge job; the logs also carry the field the TTL policy needs.

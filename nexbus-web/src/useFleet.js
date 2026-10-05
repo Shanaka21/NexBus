@@ -4,7 +4,9 @@ import { db } from './firebase'
 import { api } from './api'
 import { liveStatus } from './format'
 
-export const POLL_MS = 6000
+// Polling is the fallback when no Firestore listener can be opened; every call reads the whole fleet,
+// so keep it slow and pause it while the tab is hidden
+export const POLL_MS = 20000
 
 // Live fleet: vehicles joined with their running trip.
 // Positions arrive through read-only Firestore listeners; if a listener cannot be opened the hook polls the API.
@@ -19,12 +21,14 @@ export function useFleet(user) {
 
   useEffect(() => {
     let poll = null
+    let stopVisibility = () => {}
     let stopped = false
 
     const startPolling = () => {
       if (poll || stopped) return
       setLive(false)
       const load = async () => {
+        if (document.hidden) return
         try {
           const { vehicles: v, trips: t } = await api('/vehicles/live') // one cached call for the whole fleet
           if (stopped) return
@@ -41,6 +45,8 @@ export function useFleet(user) {
       }
       load()
       poll = setInterval(load, POLL_MS)
+      document.addEventListener('visibilitychange', load)
+      stopVisibility = () => document.removeEventListener('visibilitychange', load)
     }
 
     const vehicleQuery = operatorId
@@ -67,7 +73,7 @@ export function useFleet(user) {
       setTrips(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
     }, startPolling)
 
-    return () => { stopped = true; unsubVehicles(); unsubTrips(); if (poll) clearInterval(poll) }
+    return () => { stopped = true; unsubVehicles(); unsubTrips(); stopVisibility(); if (poll) clearInterval(poll) }
   }, [operatorId])
 
   // re-evaluate "offline" and "updated N s ago" regularly

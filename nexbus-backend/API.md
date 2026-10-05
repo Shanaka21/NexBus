@@ -24,7 +24,7 @@ Other scripts: `npm test` (unit and API tests, no database needed), `npm run tes
 | `API_BASE_URL` | Public HTTPS address of this API. PayHere posts to `API_BASE_URL/payments/notify` |
 | `INTERNAL_JOB_TOKEN` | Shared secret for Cloud Scheduler calls to `/internal/*` |
 | `ENABLE_JOBS` | `false` on Cloud Run: use Cloud Scheduler instead of the built-in timers |
-| `LIVE_CACHE_TTL_MS` | How long live results are shared between clients (default 3000) |
+| `LIVE_CACHE_TTL_MS` | How long live results are shared between clients (default 15000) |
 
 ## Authentication and roles
 

@@ -43,7 +43,7 @@ async function delayAlert(tripId, delay) {
 }
 
 async function listForUser(userId) {
-  const snap = await db.collection('notifications').where('user_id', '==', userId).get();
+  const snap = await db.collection('notifications').where('user_id', '==', userId).limit(200).get();
   return snap.docs
     .map(d => ({ id: d.id, ...d.data() }))
     .sort((a, b) => b.created_at - a.created_at)

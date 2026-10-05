@@ -115,7 +115,7 @@ async function createBooking(user, dto) {
 }
 
 async function listMine(user) {
-  const snap = await db.collection('bookings').where('user_id', '==', user.uid).get();
+  const snap = await db.collection('bookings').where('user_id', '==', user.uid).limit(200).get();
   return snap.docs
     .map(d => formatBooking(d.id, d.data()))
     .sort((a, b) => b.created_at - a.created_at);
