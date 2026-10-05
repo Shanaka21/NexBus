@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, StatusBar, ScrollView, Platform, ActivityIndicator,
 } from "react-native";
-import MapView, { Marker } from "../lib/maps";
+import MapView, { Marker, mapProvider } from "../lib/maps";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter } from "expo-router";
 import { collection, onSnapshot } from "firebase/firestore";
@@ -188,7 +188,9 @@ export default function MapScreen() {
         <>
           <MapView
             style={Platform.OS === "web" ? styles.mapWeb : styles.map}
-            mapType="mutedStandard"
+            provider={mapProvider}
+            // "mutedStandard" exists only in Apple Maps; on Android it renders a blank map
+            mapType={Platform.OS === "ios" && !mapProvider ? "mutedStandard" : "standard"}
             initialRegion={{ latitude: 6.9271, longitude: 79.8612, latitudeDelta: 0.22, longitudeDelta: 0.22 }}
             showsUserLocation
             showsMyLocationButton

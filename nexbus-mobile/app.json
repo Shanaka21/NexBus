@@ -10,7 +10,10 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "lk.nexbus.mobile"
+      "bundleIdentifier": "lk.nexbus.mobile",
+      "config": {
+        "googleMapsApiKey": "AIzaSyCfS2jKs1FqBwP9vo3hFgUe-1mnW8I1cDg"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -21,7 +24,20 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "lk.nexbus.mobile"
+      "package": "lk.nexbus.mobile",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION"
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyCfS2jKs1FqBwP9vo3hFgUe-1mnW8I1cDg"
+        }
+      }
     },
     "web": {
       "output": "static",
@@ -61,11 +77,25 @@
           "isAndroidForegroundServiceEnabled": true
         }
       ],
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "70d71492-a0ba-413d-925b-3fec2979f640"
+      }
     }
   }
 }

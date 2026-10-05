@@ -4,3 +4,4 @@ import type { ComponentType } from "react";
 declare const MapView: ComponentType<any>;
 export declare const Marker: ComponentType<any>;
 export default MapView;
+export declare const mapProvider: "google" | undefined;

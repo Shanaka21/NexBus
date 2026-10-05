@@ -9,10 +9,6 @@ import '../lib/webAlert'; // makes Alert.alert show browser dialogs on the web
 import '../lib/firebaseSession'; // registers the Firebase sign-out that runs when the session is cleared
 import { restoreSession } from '../lib/sessionStore';
 
-export const unstable_settings = {
-  anchor: '(tabs)',
-};
-
 function RootStack() {
   const { isDark } = useTheme();
   const router = useRouter();
@@ -25,7 +21,7 @@ function RootStack() {
   return (
     <>
       <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>
       <StatusBar style={isDark ? 'light' : 'dark'} />

@@ -13,3 +13,5 @@ export default function MapView({ style }) {
 export function Marker() {
   return null;
 }
+
+export const mapProvider = undefined;
