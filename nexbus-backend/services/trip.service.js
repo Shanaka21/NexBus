@@ -98,6 +98,18 @@ async function getAvailability(tripId) {
   };
 }
 
+// Which seat numbers (1..reservable_seats) are currently held by an active booking on this trip.
+// A snapshot for display only: the actual grab-a-seat check happens inside createBooking's transaction.
+async function seatMap(tripId) {
+  const { rows } = await pool.query('SELECT reservable_seats FROM trips WHERE id = $1', [tripId]);
+  if (!rows[0]) throw new AppError(404, 'TRIP_NOT_FOUND', 'Trip not found');
+  const takenRes = await pool.query(
+    "SELECT seat_numbers FROM bookings WHERE trip_id = $1 AND status IN ('pending_payment', 'confirmed')", [tripId]
+  );
+  const taken = [...new Set(takenRes.rows.flatMap((b) => b.seat_numbers || []))].sort((a, b) => a - b);
+  return { trip_id: tripId, reservable_seats: rows[0].reservable_seats || 0, taken };
+}
+
 // Start / complete / cancel a trip, with ownership checks (Appendix B.1)
 async function changeStatus(user, tripId, next) {
   const { rows } = await pool.query('SELECT * FROM trips WHERE id = $1', [tripId]);
@@ -198,4 +210,4 @@ async function tripSummary(user, tripId) {
   };
 }
 
-module.exports = { createTrip, listTrips, getAvailability, changeStatus, tripSummary };
+module.exports = { createTrip, listTrips, getAvailability, seatMap, changeStatus, tripSummary };

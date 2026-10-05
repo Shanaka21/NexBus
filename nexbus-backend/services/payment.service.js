@@ -104,7 +104,15 @@ async function handleNotify(n) {
     let refundRequired = b.refund_required;
 
     if (status === 'success') {
-      const seatsFree = trip && ['scheduled', 'running'].includes(trip.status) && trip.available_seats >= b.seat_count;
+      let seatsFree = trip && ['scheduled', 'running'].includes(trip.status) && trip.available_seats >= b.seat_count;
+      if (seatsFree && b.status === 'expired' && b.seat_numbers?.length) {
+        // The seat count may still add up, but someone else may have taken these exact seats meanwhile
+        const retakenRes = await tx.query(
+          "SELECT seat_numbers FROM bookings WHERE trip_id = $1 AND status IN ('pending_payment', 'confirmed')", [b.trip_id]
+        );
+        const taken = new Set(retakenRes.rows.flatMap((r) => r.seat_numbers || []));
+        seatsFree = !b.seat_numbers.some((s) => taken.has(s));
+      }
       if (b.status === 'pending_payment') {
         confirmed = true;
       } else if (b.status === 'expired' && seatsFree) {

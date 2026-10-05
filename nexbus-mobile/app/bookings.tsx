@@ -25,6 +25,7 @@ type Booking = {
   date: string;
   time: string;
   seats: number;
+  seat_numbers?: number[];
   status: string;
   fare: string;
   payment_status: string;
@@ -209,7 +210,7 @@ export default function BookingsScreen() {
               <View style={styles.detailsRow}>
                 <View style={styles.detailItem}><Ionicons name="calendar-outline" size={14} color="#888" /><Text style={styles.detailText}>{item.date}</Text></View>
                 <View style={styles.detailItem}><Ionicons name="time-outline"     size={14} color="#888" /><Text style={styles.detailText}>{item.time}</Text></View>
-                <View style={styles.detailItem}><Ionicons name="people-outline"   size={14} color="#888" /><Text style={styles.detailText}>{item.seats} seats</Text></View>
+                <View style={styles.detailItem}><Ionicons name="people-outline"   size={14} color="#888" /><Text style={styles.detailText}>{item.seat_numbers?.length ? `Seat ${item.seat_numbers.join(', ')}` : `${item.seats} seats`}</Text></View>
                 <View style={styles.detailItem}><Ionicons name="cash-outline"     size={14} color="#888" /><Text style={styles.detailText}>{item.fare}</Text></View>
               </View>
 

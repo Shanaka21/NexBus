@@ -10,7 +10,7 @@ import { startPayHere } from "../lib/payhere";
 
 type Booking = {
   id: string; booking_reference: string; route_number: string; from: string; to: string; date: string; time: string;
-  seats: number; fare: string; booking_status: string; payment_status: string; hold_expires_at: number | null;
+  seats: number; seat_numbers?: number[]; fare: string; booking_status: string; payment_status: string; hold_expires_at: number | null;
 };
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -153,7 +153,7 @@ export default function PaymentScreen() {
             <Row label="Reference" value={booking.booking_reference} />
             <Row label="Route" value={`${booking.route_number} · ${booking.from} → ${booking.to}`} />
             <Row label="Departure" value={`${booking.date} ${booking.time}`} />
-            <Row label="Seats" value={String(booking.seats)} />
+            <Row label="Seats" value={booking.seat_numbers?.length ? booking.seat_numbers.join(', ') : String(booking.seats)} />
             <View style={styles.divider} />
             <View style={styles.row}>
               <Text style={styles.total}>Total</Text>

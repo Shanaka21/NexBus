@@ -91,18 +91,32 @@ async function login(email, password) {
   check('recommendations ranked + explained', rec.status === 200 && rec.data.options.length > 0 && !!rec.data.explanation, rec.data.explanation);
   check('same stop rejected', (await call('GET', `/recommendations?from_stop_id=${fromId}&to_stop_id=${fromId}`, { token: P })).status === 400);
 
-  // --- booking + payment
-  const bookable = trips.data.find(t => t.status === 'scheduled' && t.available_seats >= 2 && t.id !== myTrip.id);
+  // --- booking + payment (seat-level selection: seat_numbers instead of a plain count)
+  const bookable = trips.data.find(t => t.status === 'scheduled' && t.available_seats >= 10 && t.id !== myTrip.id);
   const before = bookable.available_seats;
-  check('invalid seat count rejected', (await call('POST', '/bookings', { token: P, body: { trip_id: bookable.id, boarding_stop_id: fromId, alighting_stop_id: toId, seat_count: 5 } })).status === 400);
-  check('alighting before boarding rejected', (await call('POST', '/bookings', { token: P, body: { trip_id: bookable.id, boarding_stop_id: toId, alighting_stop_id: fromId, seat_count: 1 } })).status === 400);
-  const booking = await call('POST', '/bookings', { token: P, body: { trip_id: bookable.id, boarding_stop_id: fromId, alighting_stop_id: toId, seat_count: 2 } });
-  check('booking created pending_payment', booking.status === 201 && booking.data.booking_status === 'pending_payment', `${booking.data.booking_reference} ${booking.data.fare}`);
+  const seatsOf = (t) => call('GET', `/trips/${t.id}/seats`, { token: P });
+  check('seat map lists reservable seats', (await seatsOf(bookable)).data.reservable_seats === bookable.reservable_seats);
+  // "more than 4 seats" is pure Joi validation, already covered by tests/schemas.test.js; only the
+  // business-rule check (seat number vs this trip's reservable_seats) needs an end-to-end call here.
+  check('out of range seat rejected', (await call('POST', '/bookings', { token: P, body: { trip_id: bookable.id, boarding_stop_id: fromId, alighting_stop_id: toId, seat_numbers: [999] } })).status === 400);
+  check('alighting before boarding rejected', (await call('POST', '/bookings', { token: P, body: { trip_id: bookable.id, boarding_stop_id: toId, alighting_stop_id: fromId, seat_numbers: [1] } })).status === 400);
+  const booking = await call('POST', '/bookings', { token: P, body: { trip_id: bookable.id, boarding_stop_id: fromId, alighting_stop_id: toId, seat_numbers: [1, 2] } });
+  check('booking created pending_payment', booking.status === 201 && booking.data.booking_status === 'pending_payment', `${booking.data.booking_reference} ${booking.data.fare} seats ${booking.data.seat_numbers}`);
   const avail1 = await call('GET', `/trips/${bookable.id}/availability`, { token: P });
   check('seats held', avail1.data.available_seats === before - 2, `${before} -> ${avail1.data.available_seats}`);
+  check('seat map shows 1 and 2 taken', (await seatsOf(bookable)).data.taken.join(',') === '1,2');
+  check('re-picking a taken seat is rejected', (await call('POST', '/bookings', { token: P, body: { trip_id: bookable.id, boarding_stop_id: fromId, alighting_stop_id: toId, seat_numbers: [2] } })).status === 409);
 
-  // concurrency: last seats taken by parallel requests
-  const racers = await Promise.all(Array.from({ length: 6 }, () => call('POST', '/bookings', { token: P, body: { trip_id: bookable.id, boarding_stop_id: fromId, alighting_stop_id: toId, seat_count: 1 } })));
+  // concurrency: two passengers racing for the exact same seat number -> exactly one wins
+  const sameSeatRacers = await Promise.all(Array.from({ length: 2 }, () => call('POST', '/bookings', { token: P, body: { trip_id: bookable.id, boarding_stop_id: fromId, alighting_stop_id: toId, seat_numbers: [9] } })));
+  const sameSeatWinners = sameSeatRacers.filter(r => r.status === 201);
+  check('only one passenger wins a contested seat', sameSeatWinners.length === 1, `${sameSeatRacers.map(r => r.status)}`);
+  for (const r of sameSeatWinners) await call('PATCH', `/bookings/${r.data.id}/cancel`, { token: P });
+
+  // concurrency: last seats taken by parallel requests, each picking a distinct seat. Kept small (3, not
+  // a whole busload) because every POST /bookings here shares the same strict rate limit as /auth/login
+  // and /payments/checkout, and this script runs all of them within the same 60s window.
+  const racers = await Promise.all([3, 4, 5].map(seat => call('POST', '/bookings', { token: P, body: { trip_id: bookable.id, boarding_stop_id: fromId, alighting_stop_id: toId, seat_numbers: [seat] } })));
   const won = racers.filter(r => r.status === 201).length;
   const left = (await call('GET', `/trips/${bookable.id}/availability`, { token: P })).data.available_seats;
   check('parallel bookings never oversell', left >= 0 && left === before - 2 - won, `${won} won, ${left} seats left`);

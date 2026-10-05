@@ -4,10 +4,14 @@ const ok = (schema, value) => expect(schema.validate(value).error).toBeUndefined
 const bad = (schema, value) => expect(schema.validate(value).error).toBeDefined();
 
 describe('booking request (TC19, TC20)', () => {
-  const base = { trip_id: 'trip1', boarding_stop_id: 'pettah', alighting_stop_id: 'nugegoda', seat_count: 2 };
+  const base = { trip_id: 'trip1', boarding_stop_id: 'pettah', alighting_stop_id: 'nugegoda', seat_numbers: [12, 13] };
 
   test('valid request', () => ok(s.booking, base));
-  test.each([0, 5, 2.5, 'two'])('seat_count %p is rejected', (n) => bad(s.booking, { ...base, seat_count: n }));
+  test('empty seat_numbers is rejected', () => bad(s.booking, { ...base, seat_numbers: [] }));
+  test('more than 4 seat_numbers is rejected', () => bad(s.booking, { ...base, seat_numbers: [1, 2, 3, 4, 5] }));
+  test('duplicate seat_numbers is rejected', () => bad(s.booking, { ...base, seat_numbers: [1, 1] }));
+  test('non-integer seat number is rejected', () => bad(s.booking, { ...base, seat_numbers: [1.5] }));
+  test('seat number below 1 is rejected', () => bad(s.booking, { ...base, seat_numbers: [0] }));
   test('same boarding and alighting stop is rejected', () => bad(s.booking, { ...base, alighting_stop_id: 'pettah' }));
   test('path-like ids are rejected', () => bad(s.booking, { ...base, trip_id: '../../users' }));
   test('very long ids are rejected', () => bad(s.booking, { ...base, trip_id: 'a'.repeat(500) }));

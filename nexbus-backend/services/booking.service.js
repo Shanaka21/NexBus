@@ -28,6 +28,7 @@ function formatBooking(id, b) {
     date: dateLabel(scheduledDeparture || createdAt),
     time: scheduledDeparture ? clock(scheduledDeparture) : '',
     seats: b.seat_count || 1,
+    seat_numbers: b.seat_numbers || [],
     status,
     booking_status: status,
     payment_status: b.payment_status || 'unpaid',
@@ -70,6 +71,18 @@ async function createBooking(user, dto) {
     if (!(trip.reservable_seats > 0)) {
       throw new AppError(409, 'NOT_RESERVABLE', 'This service does not take seat reservations');
     }
+    const seatNumbers = [...new Set(dto.seat_numbers)].sort((a, b) => a - b);
+    if (seatNumbers.some((n) => n < 1 || n > trip.reservable_seats)) {
+      throw new AppError(400, 'INVALID_SEAT', `Seat numbers must be between 1 and ${trip.reservable_seats}`);
+    }
+    const takenRes = await tx.query(
+      "SELECT seat_numbers FROM bookings WHERE trip_id = $1 AND status IN ('pending_payment', 'confirmed')", [dto.trip_id]
+    );
+    const taken = new Set(takenRes.rows.flatMap((r) => r.seat_numbers || []));
+    const conflict = seatNumbers.filter((n) => taken.has(n));
+    if (conflict.length) {
+      throw new AppError(409, 'SEATS_TAKEN', `Seat ${conflict.join(', ')} ${conflict.length > 1 ? 'are' : 'is'} already taken. Please choose different seats.`);
+    }
     if (trip.status === 'running' && trip.last_latitude != null) {
       const stops = stopsRes.rows.map(s => ({
         lat: master.get(s.stop_id)?.latitude, lng: master.get(s.stop_id)?.longitude,
@@ -79,11 +92,12 @@ async function createBooking(user, dto) {
         throw new AppError(409, 'BOARDING_PASSED', 'The bus has already passed your boarding stop');
       }
     }
-    if ((trip.available_seats || 0) < dto.seat_count) {
+    const seatCount = seatNumbers.length;
+    if ((trip.available_seats || 0) < seatCount) {
       throw new AppError(409, 'SEATS_UNAVAILABLE', 'Not enough seats available');
     }
 
-    const amount = Number(route.base_fare_lkr) * dto.seat_count; // always calculated on the server
+    const amount = Number(route.base_fare_lkr) * seatCount; // always calculated on the server
     const now = Date.now();
     const row = {
       id: bookingId, booking_reference: bookingReference(), user_id: user.uid, trip_id: dto.trip_id,
@@ -91,25 +105,25 @@ async function createBooking(user, dto) {
       boarding_stop_id: dto.boarding_stop_id, alighting_stop_id: dto.alighting_stop_id,
       from_name: master.get(dto.boarding_stop_id)?.name || dto.boarding_stop_id,
       to_name: master.get(dto.alighting_stop_id)?.name || dto.alighting_stop_id,
-      seat_count: dto.seat_count, fare_amount_lkr: amount, status: 'pending_payment', payment_status: 'unpaid',
+      seat_count: seatCount, seat_numbers: seatNumbers, fare_amount_lkr: amount, status: 'pending_payment', payment_status: 'unpaid',
       hold_expires_at: now + HOLD_MS, scheduled_departure: Number(trip.scheduled_departure), created_at: now
     };
-    await tx.query('UPDATE trips SET available_seats = available_seats - $1 WHERE id = $2', [dto.seat_count, dto.trip_id]);
+    await tx.query('UPDATE trips SET available_seats = available_seats - $1 WHERE id = $2', [seatCount, dto.trip_id]);
     await tx.query(
       `INSERT INTO bookings (id, booking_reference, user_id, trip_id, route_id, route_number, vehicle_id, operator_id,
-         boarding_stop_id, alighting_stop_id, from_name, to_name, seat_count, fare_amount_lkr, status, payment_status,
+         boarding_stop_id, alighting_stop_id, from_name, to_name, seat_count, seat_numbers, fare_amount_lkr, status, payment_status,
          hold_expires_at, scheduled_departure, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
       [row.id, row.booking_reference, row.user_id, row.trip_id, row.route_id, row.route_number, row.vehicle_id, row.operator_id,
-        row.boarding_stop_id, row.alighting_stop_id, row.from_name, row.to_name, row.seat_count, row.fare_amount_lkr, row.status,
-        row.payment_status, row.hold_expires_at, row.scheduled_departure, row.created_at]
+        row.boarding_stop_id, row.alighting_stop_id, row.from_name, row.to_name, row.seat_count, row.seat_numbers, row.fare_amount_lkr,
+        row.status, row.payment_status, row.hold_expires_at, row.scheduled_departure, row.created_at]
     );
     return row;
   });
 
   cache.invalidate('active-trips');
   await audit.log({ userId: user.uid, action: 'BOOKING_CREATED', entity: 'bookings', entityId: bookingId,
-    details: { trip_id: dto.trip_id, seats: dto.seat_count } });
+    details: { trip_id: dto.trip_id, seats: booking.seat_count, seat_numbers: booking.seat_numbers } });
   return formatBooking(bookingId, booking);
 }
 

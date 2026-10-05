@@ -57,10 +57,11 @@ Roles: `passenger`, `driver`, `operator` (one company), `admin`. The role is emb
 | GET `/trips` (`?route_id=&date=&status=`) | all | Trips. Drivers and operators see their own |
 | POST `/trips` | operator | Schedule a trip (vehicle and driver) |
 | GET `/trips/:id/availability`, `/trips/:id/live` | all | Seats and fare; live status with next stops |
+| GET `/trips/:id/seats` | all | Seat map: `reservable_seats` and which seat numbers are taken |
 | GET `/trips/:id/summary` | driver, operator, admin | Distance/duration/passengers from recorded GPS fixes |
 | PATCH `/trips/:id/status` | driver, operator | Start, complete or cancel a trip |
 | POST `/location` | driver | One GPS fix of a running trip (sent every 10 s) |
-| POST `/bookings` | passenger | Book 1 to 4 seats (held for 10 minutes) |
+| POST `/bookings` | passenger | Book 1 to 4 specific seats (`seat_numbers`, 1..`reservable_seats`), held for 10 minutes |
 | GET `/bookings/me` | passenger | Own bookings |
 | GET `/bookings/:id` | passenger, operator | One booking |
 | PATCH `/bookings/:id/cancel` | passenger | Cancel (PUT also accepted) |

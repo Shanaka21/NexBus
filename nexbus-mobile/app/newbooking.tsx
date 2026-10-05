@@ -18,6 +18,7 @@ type Trip = {
   id: string; status: string; scheduled_departure: number; delay_minutes: number;
   reservable_seats: number; available_seats: number; registration_no: string;
 };
+type SeatMap = { trip_id: string; reservable_seats: number; taken: number[] };
 
 const TYPE_LABEL: Record<string, string> = { normal: "Ordinary", semi_luxury: "Semi-Luxury", luxury: "Luxury", expressway: "Expressway" };
 const duration = (min: number) => (min >= 60 ? `${Math.floor(min / 60)} h ${min % 60 ? `${min % 60} m` : ""}`.trim() : `${min} m`);
@@ -34,7 +35,9 @@ export default function NewBookingScreen() {
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
   const [boardingId, setBoardingId] = useState<string | null>(null);
   const [alightingId, setAlightingId] = useState<string | null>(null);
-  const [seats, setSeats] = useState(1);
+  const [selectedSeats, setSelectedSeats] = useState<number[]>([]);
+  const [seatMap, setSeatMap] = useState<SeatMap | null>(null);
+  const [loadingSeats, setLoadingSeats] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -74,14 +77,25 @@ export default function NewBookingScreen() {
     const ids = selectedRoute.stops.map((s) => s.stopId);
     setBoardingId(params.from && ids.includes(params.from) ? params.from : ids[0]);
     setAlightingId(params.to && ids.includes(params.to) ? params.to : ids[ids.length - 1]);
-    setSeats(1);
   }, [selectedRoute, params.trip_id, params.from, params.to]);
+
+  // Which seats are already taken on the selected trip, so the picker can grey them out
+  useEffect(() => {
+    setSelectedSeats([]);
+    setSeatMap(null);
+    if (!selectedTrip) return;
+    setLoadingSeats(true);
+    apiJson(`/trips/${selectedTrip.id}/seats`)
+      .then(({ ok, data }) => { if (ok) setSeatMap(data); })
+      .catch(() => {})
+      .finally(() => setLoadingSeats(false));
+  }, [selectedTrip]);
 
   const stops = selectedRoute?.stops ?? [];
   const boardingIndex = stops.findIndex((s) => s.stopId === boardingId);
   const alightingIndex = stops.findIndex((s) => s.stopId === alightingId);
   const maxSeats = selectedTrip ? Math.max(1, Math.min(4, selectedTrip.available_seats)) : 4;
-  const totalFare = selectedRoute ? selectedRoute.base_fare_lkr * seats : 0;
+  const totalFare = selectedRoute ? selectedRoute.base_fare_lkr * selectedSeats.length : 0;
 
   const chooseBoarding = (id: string) => {
     const index = stops.findIndex((s) => s.stopId === id);
@@ -89,7 +103,21 @@ export default function NewBookingScreen() {
     if (alightingIndex <= index) setAlightingId(stops[Math.min(index + 1, stops.length - 1)].stopId);
   };
 
-  const canBook = !!selectedRoute && !!selectedTrip && boardingIndex >= 0 && alightingIndex > boardingIndex && selectedTrip.available_seats > 0;
+  const toggleSeat = (n: number) => {
+    if (seatMap?.taken.includes(n)) return;
+    setSelectedSeats((prev) => {
+      if (prev.includes(n)) return prev.filter((s) => s !== n);
+      if (prev.length >= maxSeats) return prev;
+      return [...prev, n].sort((a, b) => a - b);
+    });
+  };
+
+  const canBook = !!selectedRoute && !!selectedTrip && boardingIndex >= 0 && alightingIndex > boardingIndex && selectedSeats.length > 0;
+
+  const refreshSeatMap = () => {
+    if (!selectedTrip) return;
+    apiJson(`/trips/${selectedTrip.id}/seats`).then(({ ok, data }) => { if (ok) setSeatMap(data); }).catch(() => {});
+  };
 
   const handleBooking = async () => {
     if (!canBook || !selectedTrip || !boardingId || !alightingId) return;
@@ -97,10 +125,14 @@ export default function NewBookingScreen() {
     try {
       const { ok, status, data } = await apiJson("/bookings", {
         method: "POST",
-        ...jsonBody({ trip_id: selectedTrip.id, boarding_stop_id: boardingId, alighting_stop_id: alightingId, seat_count: seats }),
+        ...jsonBody({ trip_id: selectedTrip.id, boarding_stop_id: boardingId, alighting_stop_id: alightingId, seat_numbers: selectedSeats }),
       });
       if (ok && data?.id) {
         router.replace({ pathname: "/payment", params: { id: data.id } } as any);
+      } else if (status === 409 && data?.code === "SEATS_TAKEN") {
+        Alert.alert("Seat already taken", data?.error || "Someone just took one of your selected seats. Please pick again.");
+        setSelectedSeats([]);
+        refreshSeatMap();
       } else if (status === 409 && data?.code === "SEATS_UNAVAILABLE") {
         Alert.alert("Not enough seats", "Someone just took those seats. Plan Trip can suggest other buses.", [
           { text: "Close", style: "cancel" },
@@ -161,7 +193,7 @@ export default function NewBookingScreen() {
                   key={t.id}
                   disabled={full}
                   style={[styles.tripCard, active && styles.routeCardActive, full && { opacity: 0.5 }]}
-                  onPress={() => { setSelectedTrip(t); setSeats(1); }}
+                  onPress={() => setSelectedTrip(t)}
                 >
                   <View style={{ flex: 1 }}>
                     <Text style={styles.tripTime}>{t.status === "running" ? "On the way" : dayTime(t.scheduled_departure)}</Text>
@@ -204,17 +236,16 @@ export default function NewBookingScreen() {
               })}
             </View>
 
-            <Text style={styles.sectionTitle}>4. Number of Seats</Text>
-            <View style={styles.seatsRow}>
-              <TouchableOpacity style={styles.seatBtn} onPress={() => setSeats(Math.max(1, seats - 1))}>
-                <Ionicons name="remove" size={20} color="#1a3cff" />
-              </TouchableOpacity>
-              <Text style={styles.seatCount}>{seats}</Text>
-              <TouchableOpacity style={styles.seatBtn} onPress={() => setSeats(Math.min(maxSeats, seats + 1))}>
-                <Ionicons name="add" size={20} color="#1a3cff" />
-              </TouchableOpacity>
-              <Text style={styles.seatMax}>Max {maxSeats} seat{maxSeats === 1 ? "" : "s"}</Text>
-            </View>
+            <Text style={styles.sectionTitle}>4. Select Seats</Text>
+            <Text style={styles.hint}>Pick up to {maxSeats} seat{maxSeats === 1 ? "" : "s"}. Tap a seat to select it.</Text>
+            {loadingSeats ? (
+              <ActivityIndicator color="#1a3cff" style={{ marginVertical: 16 }} />
+            ) : seatMap ? (
+              <SeatGrid seatMap={seatMap} selected={selectedSeats} maxSeats={maxSeats} onToggle={toggleSeat} />
+            ) : null}
+            {selectedSeats.length > 0 && (
+              <Text style={styles.seatSelection}>Selected: {selectedSeats.join(', ')}</Text>
+            )}
           </>
         )}
 
@@ -225,7 +256,7 @@ export default function NewBookingScreen() {
             <SummaryRow label="Departure" value={selectedTrip.status === "running" ? "On the way" : dayTime(selectedTrip.scheduled_departure)} />
             <SummaryRow label="Boarding" value={stopLabel(stops[boardingIndex])} />
             <SummaryRow label="Alighting" value={stopLabel(stops[alightingIndex])} />
-            <SummaryRow label="Seats" value={String(seats)} />
+            <SummaryRow label="Seats" value={selectedSeats.join(', ')} />
             <View style={styles.divider} />
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Fare per Seat</Text>
@@ -279,6 +310,67 @@ function RouteCard({ route, selected, onPress }: { route: RouteItem; selected: b
       </View>
       {selected && <Ionicons name="checkmark-circle" size={22} color="#1a3cff" style={{ marginLeft: 8 }} />}
     </TouchableOpacity>
+  );
+}
+
+// A 2 + aisle + 2 seat grid, numbered 1..reservable_seats, generated from the trip's seat map
+function SeatGrid({ seatMap, selected, maxSeats, onToggle }: {
+  seatMap: SeatMap; selected: number[]; maxSeats: number; onToggle: (n: number) => void;
+}) {
+  const total = seatMap.reservable_seats;
+  const rows = Math.ceil(total / 4);
+  return (
+    <View style={styles.seatGridCard}>
+      <View style={styles.busFront}>
+        <Ionicons name="person-circle-outline" size={16} color="#aaa" />
+        <Text style={styles.busFrontText}>FRONT</Text>
+      </View>
+      {Array.from({ length: rows }, (_, row) => {
+        const rowSeats = [1, 2, 3, 4].map((i) => row * 4 + i).filter((n) => n <= total);
+        return (
+          <View key={row} style={styles.seatRow}>
+            <View style={styles.seatPair}>
+              {rowSeats.slice(0, 2).map((n) => <Seat key={n} n={n} seatMap={seatMap} selected={selected} maxSeats={maxSeats} onToggle={onToggle} />)}
+            </View>
+            <View style={styles.aisle} />
+            <View style={styles.seatPair}>
+              {rowSeats.slice(2, 4).map((n) => <Seat key={n} n={n} seatMap={seatMap} selected={selected} maxSeats={maxSeats} onToggle={onToggle} />)}
+            </View>
+          </View>
+        );
+      })}
+      <View style={styles.seatLegend}>
+        <LegendItem color="#fff" border="#ccc" label="Available" />
+        <LegendItem color="#1a3cff" border="#1a3cff" label="Selected" />
+        <LegendItem color="#eee" border="#eee" label="Taken" />
+      </View>
+    </View>
+  );
+}
+
+function Seat({ n, seatMap, selected, maxSeats, onToggle }: {
+  n: number; seatMap: SeatMap; selected: number[]; maxSeats: number; onToggle: (n: number) => void;
+}) {
+  const taken = seatMap.taken.includes(n);
+  const isSelected = selected.includes(n);
+  const blocked = taken || (!isSelected && selected.length >= maxSeats);
+  return (
+    <TouchableOpacity
+      disabled={blocked}
+      onPress={() => onToggle(n)}
+      style={[styles.seat, isSelected && styles.seatSelected, taken && styles.seatTaken, blocked && !taken && styles.seatDisabled]}
+    >
+      <Text style={[styles.seatText, isSelected && styles.seatTextSelected, taken && styles.seatTextTaken]}>{n}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function LegendItem({ color, border, label }: { color: string; border: string; label: string }) {
+  return (
+    <View style={styles.legendItem}>
+      <View style={[styles.legendDot, { backgroundColor: color, borderColor: border }]} />
+      <Text style={styles.legendText}>{label}</Text>
+    </View>
   );
 }
 
@@ -341,10 +433,24 @@ const styles = StyleSheet.create({
   timeText: { fontSize: 13, color: "#555" },
   timeTextActive: { color: "#fff", fontWeight: "600" },
 
-  seatsRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 14, padding: 16, gap: 16, marginBottom: 16 },
-  seatBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: "#f0f4ff", alignItems: "center", justifyContent: "center" },
-  seatCount: { fontSize: 22, fontWeight: "bold", color: "#1a1a4e" },
-  seatMax: { fontSize: 12, color: "#aaa", marginLeft: 8 },
+  seatGridCard: { backgroundColor: "#fff", borderRadius: 14, padding: 16, marginBottom: 12, alignItems: "center" },
+  busFront: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 14, borderBottomWidth: 1, borderBottomColor: "#f0f0f5", paddingBottom: 10, width: "100%", justifyContent: "center" },
+  busFrontText: { fontSize: 10, fontWeight: "700", color: "#aaa", letterSpacing: 1 },
+  seatRow: { flexDirection: "row", alignItems: "center", marginBottom: 8, gap: 10 },
+  seatPair: { flexDirection: "row", gap: 8 },
+  aisle: { width: 20 },
+  seat: { width: 36, height: 36, borderRadius: 8, borderWidth: 1.5, borderColor: "#ccc", backgroundColor: "#fff", alignItems: "center", justifyContent: "center" },
+  seatSelected: { backgroundColor: "#1a3cff", borderColor: "#1a3cff" },
+  seatTaken: { backgroundColor: "#eee", borderColor: "#eee" },
+  seatDisabled: { opacity: 0.4 },
+  seatText: { fontSize: 12, fontWeight: "700", color: "#555" },
+  seatTextSelected: { color: "#fff" },
+  seatTextTaken: { color: "#bbb" },
+  seatLegend: { flexDirection: "row", gap: 16, marginTop: 10 },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: 6 },
+  legendDot: { width: 12, height: 12, borderRadius: 3, borderWidth: 1.5 },
+  legendText: { fontSize: 11, color: "#888" },
+  seatSelection: { fontSize: 13, fontWeight: "600", color: "#1a3cff", marginBottom: 16 },
 
   summaryCard: {
     backgroundColor: "#fff", borderRadius: 14, padding: 16, marginBottom: 16,

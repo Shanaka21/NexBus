@@ -28,6 +28,10 @@ router.get('/:id/availability', async (req, res) => {
   res.json(await tripService.getAvailability(req.params.id));
 });
 
+router.get('/:id/seats', async (req, res) => {
+  res.json(await tripService.seatMap(req.params.id));
+});
+
 router.get('/:id/summary', authorize('driver', 'operator', 'admin'), async (req, res) => {
   res.json(await tripService.tripSummary(req.user, req.params.id));
 });

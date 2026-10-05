@@ -63,14 +63,14 @@ describe('role based access (ST4, ST5, TC04)', () => {
 describe('input validation (Table 6.4)', () => {
   test('booking with 5 seats is rejected', async () => {
     const res = await as(request(app).post('/bookings'), 'passenger')
-      .send({ trip_id: 't1', boarding_stop_id: 'a', alighting_stop_id: 'b', seat_count: 5 });
+      .send({ trip_id: 't1', boarding_stop_id: 'a', alighting_stop_id: 'b', seat_numbers: [1, 2, 3, 4, 5] });
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('VALIDATION_ERROR');
   });
 
   test('path-like trip id is rejected', async () => {
     const res = await as(request(app).post('/bookings'), 'passenger')
-      .send({ trip_id: '../../users', boarding_stop_id: 'a', alighting_stop_id: 'b', seat_count: 1 });
+      .send({ trip_id: '../../users', boarding_stop_id: 'a', alighting_stop_id: 'b', seat_numbers: [1] });
     expect(res.status).toBe(400);
   });
 

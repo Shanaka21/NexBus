@@ -874,6 +874,29 @@
           }
         },
         {
+          "name": "Seat map (which seats are taken)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{passengerToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/trips/{{tripId}}/seats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "trips",
+                "{{tripId}}",
+                "seats"
+              ]
+            }
+          }
+        },
+        {
           "name": "Trip summary (distance/duration)",
           "request": {
             "method": "GET",
@@ -1045,7 +1068,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"trip_id\": \"{{tripId}}\",\n  \"boarding_stop_id\": \"pettah\",\n  \"alighting_stop_id\": \"nugegoda\",\n  \"seat_count\": 2\n}"
+              "raw": "{\n  \"trip_id\": \"{{tripId}}\",\n  \"boarding_stop_id\": \"pettah\",\n  \"alighting_stop_id\": \"nugegoda\",\n  \"seat_numbers\": [\n    12,\n    13\n  ]\n}"
             }
           }
         },

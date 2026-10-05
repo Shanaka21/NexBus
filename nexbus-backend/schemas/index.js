@@ -109,7 +109,7 @@ exports.booking = Joi.object({
   trip_id: id.required(),
   boarding_stop_id: id.required(),
   alighting_stop_id: id.required().invalid(Joi.ref('boarding_stop_id')),
-  seat_count: Joi.number().integer().min(1).max(4).required()
+  seat_numbers: Joi.array().items(Joi.number().integer().min(1).max(200)).unique().min(1).max(4).required()
 });
 
 exports.checkout = Joi.object({ booking_id: id.required() });

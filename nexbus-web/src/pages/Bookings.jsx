@@ -44,7 +44,7 @@ export default function Bookings() {
             columns={[
               { key: 'ref', title: 'Reference', render: (b) => <strong>{b.booking_reference || b.id.slice(0, 8)}</strong> },
               { key: 'trip', title: 'Trip', render: (b) => <>Route {b.route_number}<span className="cell-sub">{b.from} to {b.to} · {b.date} {b.time}</span></> },
-              { key: 'seats', title: 'Seats', render: (b) => b.seats },
+              { key: 'seats', title: 'Seats', render: (b) => b.seat_numbers?.length ? b.seat_numbers.join(', ') : b.seats },
               { key: 'amount', title: 'Amount', render: (b) => <span className="nowrap">{b.fare}</span> },
               { key: 'status', title: 'Booking', render: (b) => <Badge tone={BOOKING_TONE[b.booking_status] || 'gray'}>{label(b.booking_status)}</Badge> },
               {
