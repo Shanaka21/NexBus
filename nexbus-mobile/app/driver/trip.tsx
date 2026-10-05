@@ -5,7 +5,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter, useLocalSearchParams } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import MapView, { Marker, Polyline, mapProvider } from "../../lib/maps";
+import MapView, { Marker, Polyline, BaseTiles, baseMapType, mapProvider } from "../../lib/maps";
 import { apiJson, jsonBody } from "../../lib/api";
 import { startSharing, stopSharing, type SharingMode } from "../../lib/driverTracking";
 import { clockTime, msAgo, stopLabel } from "../../lib/format";
@@ -169,6 +169,7 @@ export default function DriverActiveTripScreen() {
               <MapView
                 style={styles.map}
                 provider={mapProvider}
+                mapType={baseMapType}
                 pointerEvents="none"
                 initialRegion={{
                   latitude: trip.last_latitude ?? route.stops[0].lat,
@@ -177,6 +178,7 @@ export default function DriverActiveTripScreen() {
                   longitudeDelta: 0.12,
                 }}
               >
+                <BaseTiles />
                 <Polyline
                   coordinates={route.stops.slice().sort((a, b) => a.sequenceNo - b.sequenceNo).map((s) => ({ latitude: s.lat, longitude: s.lng }))}
                   strokeColor="#1a3cff"

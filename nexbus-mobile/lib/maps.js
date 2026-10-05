@@ -18,4 +18,9 @@ export function Polyline() {
   return null;
 }
 
+export function BaseTiles() {
+  return null;
+}
+
+export const baseMapType = 'standard';
 export const mapProvider = undefined;

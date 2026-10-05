@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, StatusBar, ScrollView, Platform, ActivityIndicator, AppState,
 } from "react-native";
-import MapView, { Marker, mapProvider } from "../lib/maps";
+import MapView, { Marker, BaseTiles, baseMapType, mapProvider } from "../lib/maps";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter } from "expo-router";
 import { apiJson } from "../lib/api";
@@ -166,13 +166,14 @@ export default function MapScreen() {
             style={Platform.OS === "web" ? styles.mapWeb : styles.map}
             provider={mapProvider}
             // "mutedStandard" exists only in Apple Maps; on Android it renders a blank map
-            mapType={Platform.OS === "ios" && !mapProvider ? "mutedStandard" : "standard"}
+            mapType={Platform.OS === "ios" && !mapProvider ? "mutedStandard" : baseMapType}
             initialRegion={{ latitude: 6.9271, longitude: 79.8612, latitudeDelta: 0.22, longitudeDelta: 0.22 }}
             showsUserLocation
             showsMyLocationButton
             showsCompass
             showsScale
           >
+            <BaseTiles />
             {visible.map((bus) => {
               const status = liveStatus(bus, now);
               const color = status === "offline" ? "#9e9e9e" : status === "delayed" ? "#ff9800" : routeColor(bus.route_number);
