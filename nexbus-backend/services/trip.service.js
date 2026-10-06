@@ -128,14 +128,23 @@ async function changeStatus(user, tripId, next) {
   } else {
     await pool.query('UPDATE trips SET status = $1 WHERE id = $2', [next, tripId]);
   }
-  cache.invalidate();
 
   if (next === 'running') {
     await pool.query("UPDATE vehicles SET current_trip_id = $1, status = 'active' WHERE id = $2", [tripId, trip.vehicle_id]);
   }
 
   if (next === 'completed' || next === 'cancelled') {
-    await pool.query('UPDATE vehicles SET current_trip_id = NULL, delay_minutes = 0 WHERE id = $1', [trip.vehicle_id]);
+    // The bus goes offline: no trip, no delay and no last position, so it leaves the live map instead of
+    // sitting on the spot where it stopped. Only when the vehicle is on this very trip: cancelling a future
+    // trip must not disturb the one the bus is running now. An operator's emergency/inactive flag is kept.
+    await pool.query(
+      `UPDATE vehicles
+         SET current_trip_id = NULL, delay_minutes = 0,
+             last_latitude = NULL, last_longitude = NULL, last_speed_kmh = NULL, last_update_at = NULL,
+             status = CASE WHEN status = 'delayed' THEN 'active' ELSE status END
+       WHERE id = $1 AND current_trip_id = $2`,
+      [trip.vehicle_id, tripId]
+    );
     const openRes = await pool.query(
       "SELECT * FROM bookings WHERE trip_id = $1 AND status IN ('confirmed', 'pending_payment')", [tripId]
     );
@@ -160,6 +169,7 @@ async function changeStatus(user, tripId, next) {
     }
     await Promise.all(notices);
   }
+  cache.invalidate(); // after the vehicle rows changed, so the live map never rebuilds from the old state
   return { id: tripId, status: next };
 }
 

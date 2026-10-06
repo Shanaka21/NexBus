@@ -26,7 +26,7 @@ export const LIVE_STATUS: Record<string, { label: string; color: string; bg: str
   delayed:   { label: "DELAYED",   color: "#ff9800", bg: "#fff3e0" },
   offline:   { label: "OFFLINE",   color: "#9e9e9e", bg: "#eeeeee" },
   scheduled: { label: "SCHEDULED", color: "#1a3cff", bg: "#e3f2fd" },
-  idle:      { label: "NOT RUNNING", color: "#9e9e9e", bg: "#eeeeee" },
+  idle:      { label: "OFFLINE", color: "#9e9e9e", bg: "#eeeeee" },
 };
 
 export function secondsAgo(seconds: number | null | undefined): string {

@@ -158,6 +158,8 @@ async function login(email, password) {
 
   // --- driver finishes trip
   check('driver completes trip', (await call('PATCH', `/trips/${myTrip.id}/status`, { token: D, body: { status: 'completed' } })).status === 200);
+  const endedBus = (await call('GET', '/buses', { token: P })).data.find(b => b.id === myTrip.vehicle_id);
+  check('bus goes offline when its trip ends', !!endedBus && endedBus.lat == null && endedBus.last_update_at == null);
   const summary = await call('GET', `/trips/${myTrip.id}/summary`, { token: D });
   check('trip summary has distance/duration', summary.status === 200 && typeof summary.data.distance_km === 'number' && summary.data.status === 'completed', JSON.stringify(summary.data));
   check('passenger cannot read trip summary -> 403', (await call('GET', `/trips/${myTrip.id}/summary`, { token: P })).status === 403);

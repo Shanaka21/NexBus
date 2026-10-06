@@ -39,7 +39,7 @@ export const LIVE = {
   on_time: { label: 'On time', tone: 'green', color: '#2e9e5b' },
   delayed: { label: 'Delayed', tone: 'amber', color: '#e8a317' },
   offline: { label: 'Offline', tone: 'gray', color: '#9aa0b4' },
-  idle: { label: 'Not running', tone: 'gray', color: '#9aa0b4' },
+  idle: { label: 'Offline', tone: 'gray', color: '#9aa0b4' },
 }
 
 export const BOOKING_TONE = {
