@@ -1,19 +1,33 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  StatusBar, Modal, FlatList, SafeAreaView, Switch, ActivityIndicator,
+  StatusBar, Modal, FlatList, SafeAreaView, Switch, ActivityIndicator, TextInput,
 } from "react-native";
+import * as Location from "expo-location";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter, useLocalSearchParams } from "expo-router";
-import { apiJson } from "../lib/api";
-import { stopLabel, lkr, LIVE_STATUS } from "../lib/format";
+import { apiJson, jsonBody } from "../lib/api";
+import { stopLabel, lkr, clockTime, LIVE_STATUS } from "../lib/format";
 
 type Stop = { id: string; name: string; name_si?: string };
 type Option = {
   trip_id: string; route_id: string; route_number: string; route_name: string; registration_no: string;
   boarding_stop_id: string; alighting_stop_id: string; eta_min: number; delay_minutes: number;
   reservable_seats: number; available_seats: number; fare_lkr: number; status: string; score: number;
+  alight_eta_min: number | null;
 };
+
+// Last known position, only when the passenger allows it: lets "I want to go to X" work without naming an origin
+async function currentPosition(): Promise<{ lat: number; lng: number } | null> {
+  try {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== "granted") return null;
+    const loc = await Location.getLastKnownPositionAsync();
+    return loc ? { lat: loc.coords.latitude, lng: loc.coords.longitude } : null;
+  } catch {
+    return null;
+  }
+}
 
 // Plan Trip: ranked options from live ETA, delay and seat availability, with a plain-language reason
 export default function SmartSuggestionsScreen() {
@@ -29,6 +43,30 @@ export default function SmartSuggestionsScreen() {
   const [explanation, setExplanation] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [question, setQuestion] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [answer, setAnswer] = useState<string | null>(null);
+
+  // Free-text request: the server works out the two stops, then the normal search below shows the buses
+  const ask = async () => {
+    const query = question.trim();
+    if (query.length < 2 || asking) return;
+    setAsking(true);
+    setAnswer(null);
+    try {
+      const position = await currentPosition();
+      const { ok, data } = await apiJson("/recommendations/ask", { method: "POST", ...jsonBody({ query, ...(position || {}) }) });
+      if (!ok) { setAnswer(data?.error || "The assistant could not answer. Choose the stops below."); return; }
+      setAnswer(data.answer);
+      if (data.from) setFromId(data.from.id);
+      if (data.to) setToId(data.to.id);
+      if (data.need_seat) setNeedSeat(true);
+    } catch {
+      setAnswer("Could not connect to the server.");
+    } finally {
+      setAsking(false);
+    }
+  };
 
   useEffect(() => {
     apiJson("/stops").then(({ ok, data }) => { if (ok && Array.isArray(data)) setStops(data); }).catch(() => {});
@@ -99,7 +137,29 @@ export default function SmartSuggestionsScreen() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-        <View style={styles.selectorCard}>
+        <View style={styles.askCard}>
+          <TextInput
+            style={styles.askInput}
+            placeholder="Where do you want to go? e.g. Nugegoda yanna ona"
+            placeholderTextColor="#aaa"
+            value={question}
+            onChangeText={setQuestion}
+            onSubmitEditing={ask}
+            returnKeyType="search"
+            maxLength={300}
+          />
+          <TouchableOpacity style={[styles.askBtn, (asking || question.trim().length < 2) && { opacity: 0.5 }]} onPress={ask} disabled={asking || question.trim().length < 2}>
+            {asking ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="sparkles" size={18} color="#fff" />}
+          </TouchableOpacity>
+        </View>
+        {answer && (
+          <View style={styles.tipCard}>
+            <View style={styles.tipIconWrap}><Ionicons name="sparkles" size={18} color="#1a3cff" /></View>
+            <Text style={[styles.tipText, { flex: 1 }]}>{answer}</Text>
+          </View>
+        )}
+
+        <View style={[styles.selectorCard, { marginTop: 14 }]}>
           <TouchableOpacity style={styles.stopRow} onPress={() => setPickerFor("from")}>
             <View style={styles.stopIconWrap}><Ionicons name="bus" size={18} color="#1a3cff" /></View>
             <View style={styles.stopInfo}>
@@ -165,6 +225,19 @@ export default function SmartSuggestionsScreen() {
                 <View style={styles.arrivingPill}>
                   <Text style={styles.arrivingMin}>{best.eta_min}</Text>
                   <Text style={styles.arrivingLabel}>MIN</Text>
+                </View>
+              </View>
+
+              <View style={styles.legs}>
+                <View style={styles.legRow}>
+                  <Ionicons name="log-in-outline" size={16} color="#1a3cff" />
+                  <Text style={styles.legText}>Board at {from ? stopLabel(from) : "your stop"}</Text>
+                  <Text style={styles.legTime}>{clockTime(Date.now() + best.eta_min * 60000)}</Text>
+                </View>
+                <View style={styles.legRow}>
+                  <Ionicons name="log-out-outline" size={16} color="#1a3cff" />
+                  <Text style={styles.legText}>Get off at {to ? stopLabel(to) : "your destination"}</Text>
+                  <Text style={styles.legTime}>{best.alight_eta_min != null ? clockTime(Date.now() + best.alight_eta_min * 60000) : ""}</Text>
                 </View>
               </View>
 
@@ -295,6 +368,15 @@ const styles = StyleSheet.create({
   selectorDivider: { flexDirection: "row", alignItems: "center", gap: 8, marginVertical: 6 },
   dividerLine:     { flex: 1, height: 1, backgroundColor: "#f0f0f0" },
   swapBtn:         { width: 30, height: 30, borderRadius: 15, backgroundColor: "#f0f4ff", alignItems: "center", justifyContent: "center" },
+
+  askCard:  { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#fff", borderRadius: 16, padding: 10, paddingLeft: 16, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
+  askInput: { flex: 1, fontSize: 15, color: "#1a1a4e", paddingVertical: 8 },
+  askBtn:   { width: 42, height: 42, borderRadius: 12, backgroundColor: "#1a3cff", alignItems: "center", justifyContent: "center" },
+
+  legs:    { marginTop: 12, gap: 8, backgroundColor: "#f5f6fa", borderRadius: 12, padding: 12 },
+  legRow:  { flexDirection: "row", alignItems: "center", gap: 8 },
+  legText: { flex: 1, fontSize: 13, color: "#1a1a4e", fontWeight: "600" },
+  legTime: { fontSize: 13, color: "#1a3cff", fontWeight: "700" },
 
   seatRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: "#fff", borderRadius: 14, paddingHorizontal: 16, paddingVertical: 10, marginBottom: 18 },
   seatText: { fontSize: 15, fontWeight: "600", color: "#1a1a4e" },

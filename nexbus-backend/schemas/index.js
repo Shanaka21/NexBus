@@ -136,6 +136,12 @@ exports.recommendations = Joi.object({
   need_seat: Joi.boolean().default(false)
 });
 
+exports.ask = Joi.object({
+  query: Joi.string().trim().min(2).max(300).required(),
+  lat: Joi.number().min(5.9).max(9.9),
+  lng: Joi.number().min(79.5).max(81.9)
+}).and('lat', 'lng');
+
 exports.driver = Joi.object({
   full_name: Joi.string().trim().min(2).max(80).required(),
   email: email.required(),

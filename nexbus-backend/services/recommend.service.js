@@ -60,6 +60,7 @@ async function recommend({ from_stop_id: fromId, to_stop_id: toId, need_seat: ne
         reservable_seats: trip.reservable_seats || 0,
         available_seats: trip.available_seats || 0,
         fare_lkr: route.base_fare_lkr,
+        alight_eta_min: arrival.tripEta(trip, route, stops, to, now)?.eta_min ?? null,
         ...info
       });
     }
