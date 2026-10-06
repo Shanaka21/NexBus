@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { View, Text, StyleSheet, Animated, StatusBar, Image, Easing, useWindowDimensions } from "react-native";
 import { Stack, useRouter } from "expo-router";
-import { LinearGradient } from "expo-linear-gradient";
 import { getUserId, getRole } from "../lib/userSession";
 
 export default function SplashScreen() {
@@ -30,12 +29,9 @@ export default function SplashScreen() {
   }, [fadeAnim, progressAnim, router]);
 
   return (
-    <LinearGradient
-      colors={["#4f86f7", "#1a3cff", "#0d1b6e"]}
-      style={styles.container}
-    >
+    <View style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
-      <StatusBar barStyle="light-content" backgroundColor="#1a3cff" />
+      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
       <Animated.View style={[styles.iconBox, { opacity: fadeAnim }]}>
         <Image source={require("../assets/images/logo.png")} style={styles.logo} />
       </Animated.View>
@@ -59,13 +55,14 @@ export default function SplashScreen() {
       <View style={styles.footer}>
         <Text style={styles.footerText}>© 2026 NEXBUS SYSTEMS INC.</Text>
       </View>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: "#ffffff",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 40,
@@ -87,7 +84,7 @@ const styles = StyleSheet.create({
   logo: { width: 260, height: 145, resizeMode: "contain" },
   subtitle: {
     fontSize: 16,
-    color: "rgba(255,255,255,0.75)",
+    color: "#5b6478",
     textAlign: "center",
     marginTop: 0,
     marginBottom: 36,
@@ -99,18 +96,18 @@ const styles = StyleSheet.create({
   track: {
     height: 6,
     borderRadius: 3,
-    backgroundColor: "rgba(255,255,255,0.25)",
+    backgroundColor: "#e3e8f5",
     overflow: "hidden",
   },
   fill: {
     height: "100%",
     borderRadius: 3,
-    backgroundColor: "#fff",
+    backgroundColor: "#1a3cff",
   },
   initText: {
     fontSize: 12,
     fontWeight: "bold",
-    color: "rgba(255,255,255,0.9)",
+    color: "#0d1b6e",
     letterSpacing: 1.5,
     marginTop: 14,
   },
@@ -120,7 +117,7 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 11,
-    color: "rgba(255,255,255,0.5)",
+    color: "#8a93a8",
     letterSpacing: 2,
   },
 });
