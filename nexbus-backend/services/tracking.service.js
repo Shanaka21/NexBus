@@ -40,7 +40,11 @@ async function processFix(user, fix) {
   // an emergency flag raised by the operator is never overwritten by the tracker
   const vehicleStatus = vehicle.status === 'emergency' ? 'emergency' : (delay >= DELAY_ALERT_MIN ? 'delayed' : 'active');
 
-  await withTransaction(async (tx) => {
+  const stored = await withTransaction(async (tx) => {
+    // Lock the trip row first: ending the trip waits for this fix, or this fix sees that the trip has ended.
+    // Without it a late fix would write a position back after the bus went offline.
+    const live = await tx.query("SELECT status FROM trips WHERE id = $1 FOR UPDATE", [tripId]);
+    if (live.rows[0]?.status !== 'running') return false;
     await tx.query(
       'UPDATE vehicles SET last_latitude=$1, last_longitude=$2, last_speed_kmh=$3, last_update_at=$4, delay_minutes=$5, current_trip_id=$6, status=$7 WHERE id=$8',
       [lat, lng, speedKmh, now, delay, tripId, vehicleStatus, trip.vehicle_id]
@@ -53,7 +57,9 @@ async function processFix(user, fix) {
       'INSERT INTO location_logs (vehicle_id, trip_id, latitude, longitude, speed_kmh, heading, accuracy_m, recorded_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
       [trip.vehicle_id, tripId, lat, lng, speedKmh, heading, accuracyM, now]
     );
+    return true;
   });
+  if (!stored) throw new AppError(403, 'NOT_ASSIGNED_OR_NOT_RUNNING', 'This trip is not assigned to you or is not running');
 
   // Alert only the first time the delay reaches the threshold
   if (delay >= DELAY_ALERT_MIN && (trip.delay_minutes || 0) < DELAY_ALERT_MIN) {

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import {
-  View, Text, StyleSheet, TouchableOpacity, StatusBar, ScrollView, Platform, ActivityIndicator, AppState,
+  View, Text, StyleSheet, TouchableOpacity, StatusBar, ScrollView, Platform, ActivityIndicator, AppState, Modal, Pressable,
 } from "react-native";
 import MapView, { Marker, BaseTiles, baseMapType, mapProvider } from "../lib/maps";
 import { Ionicons } from "@expo/vector-icons";
@@ -34,6 +34,14 @@ const routeColor = (route: string) => PALETTE[[...route].reduce((n, c) => n + c.
 const liveStatus = (b: Bus, now: number) =>
   !b.last_update_at || now - b.last_update_at > OFFLINE_MS ? "offline" : b.delay_minutes >= 10 ? "delayed" : "on_time";
 
+type StatusFilter = "all" | "on_time" | "delayed" | "offline";
+const STATUS_OPTIONS: { key: StatusFilter; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "on_time", label: "On time" },
+  { key: "delayed", label: "Delayed" },
+  { key: "offline", label: "Offline" },
+];
+
 const light = {
   bg: "#fff", header: "#fff", text: "#1a1a4e", filterRow: "#fff", chip: "#fff", chipBorder: "#e0e0e0",
   chipText: "#555", liveIndicator: "#fff", liveText: "#1a1a4e", busCard: "#fff", routeTag: "#f0f4ff",
@@ -51,11 +59,13 @@ export default function MapScreen() {
   const p = isDark ? dark : light;
 
   const [buses, setBuses] = useState<Bus[]>([]);
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(() => Date.now());
   const [connected, setConnected] = useState(true);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filterRoute, setFilterRoute] = useState<string | null>(null);
+  const [filterStatus, setFilterStatus] = useState<StatusFilter>("all");
+  const [showFilters, setShowFilters] = useState(false);
   const [detail, setDetail] = useState<TripLive | null>(null);
 
   // Live positions are polled from the API every 5 seconds (paused while the app is in the background).
@@ -89,6 +99,19 @@ export default function MapScreen() {
 
   const selected = buses.find((b) => b.id === selectedId) || null;
 
+  // The API drops a bus from the list when its driver ends the trip; close its panel and say why
+  const [endedNotice, setEndedNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (!selectedId || loading || buses.some((b) => b.id === selectedId)) return;
+    setSelectedId(null);
+    setEndedNotice(`Bus ${selectedId} has finished its trip and is now offline.`);
+  }, [buses, selectedId, loading]);
+  useEffect(() => {
+    if (!endedNotice) return;
+    const t = setTimeout(() => setEndedNotice(null), 6000);
+    return () => clearTimeout(t);
+  }, [endedNotice]);
+
   const loadDetail = useCallback(async (bus: Bus) => {
     setDetail(null);
     if (!bus.current_trip_id) return;
@@ -104,7 +127,11 @@ export default function MapScreen() {
   }, [selected?.id, loadDetail]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const routes = useMemo(() => [...new Set(buses.map((b) => b.route_number))].sort(), [buses]);
-  const visible = filterRoute ? buses.filter((b) => b.route_number === filterRoute) : buses;
+  const matchesRoute = (b: Bus) => !filterRoute || b.route_number === filterRoute;
+  const matchesStatus = (b: Bus, key: StatusFilter) => key === "all" || liveStatus(b, now) === key;
+  const visible = buses.filter((b) => matchesRoute(b) && matchesStatus(b, filterStatus));
+  const activeFilters = (filterRoute ? 1 : 0) + (filterStatus !== "all" ? 1 : 0);
+  const resetFilters = () => { setFilterRoute(null); setFilterStatus("all"); };
 
   const statusPill = (bus: Bus) => {
     const s = LIVE_STATUS[liveStatus(bus, now)];
@@ -128,8 +155,11 @@ export default function MapScreen() {
           <Ionicons name="arrow-back" size={24} color={p.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: p.text }]}>Live Map</Text>
-        <TouchableOpacity onPress={() => setFilterRoute(null)}>
-          <Ionicons name={filterRoute ? "close-circle" : "options-outline"} size={24} color={filterRoute ? "#1a3cff" : p.text} />
+        <TouchableOpacity onPress={() => setShowFilters(true)} hitSlop={10} accessibilityLabel="Filter buses">
+          <Ionicons name="options-outline" size={24} color={activeFilters ? "#1a3cff" : p.text} />
+          {activeFilters > 0 && (
+            <View style={styles.filterBadge}><Text style={styles.filterBadgeText}>{activeFilters}</Text></View>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -137,6 +167,13 @@ export default function MapScreen() {
         <View style={styles.banner}>
           <Ionicons name="cloud-offline-outline" size={14} color="#fff" />
           <Text style={styles.bannerText}>Connection lost. Showing the last known positions.</Text>
+        </View>
+      )}
+
+      {endedNotice && (
+        <View style={[styles.banner, { backgroundColor: "#546e7a" }]}>
+          <Ionicons name="checkmark-circle-outline" size={14} color="#fff" />
+          <Text style={styles.bannerText}>{endedNotice}</Text>
         </View>
       )}
 
@@ -259,6 +296,66 @@ export default function MapScreen() {
         </View>
       )}
 
+      <Modal visible={showFilters} transparent animationType="slide" onRequestClose={() => setShowFilters(false)}>
+        <Pressable style={styles.sheetBackdrop} onPress={() => setShowFilters(false)}>
+          <Pressable style={[styles.sheet, { backgroundColor: p.busCard }]} onPress={() => {}}>
+            <View style={styles.sheetHandle} />
+            <View style={styles.sheetHead}>
+              <Text style={[styles.sheetTitle, { color: p.text }]}>Filter buses</Text>
+              <TouchableOpacity onPress={() => setShowFilters(false)} hitSlop={10}>
+                <Ionicons name="close" size={22} color={p.subText} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.sheetLabel}>ROUTE</Text>
+            <View style={styles.sheetChips}>
+              {[null, ...routes].map((r) => {
+                const active = filterRoute === r;
+                const color = r ? routeColor(r) : "#1a3cff";
+                const n = buses.filter((b) => (!r || b.route_number === r) && matchesStatus(b, filterStatus)).length;
+                return (
+                  <TouchableOpacity
+                    key={r ?? "all"}
+                    style={[styles.sheetChip, { backgroundColor: p.chip, borderColor: p.chipBorder }, active && { backgroundColor: color, borderColor: color }]}
+                    onPress={() => setFilterRoute(r)}
+                  >
+                    <Text style={[styles.sheetChipText, { color: p.chipText }, active && { color: "#fff" }]}>{r ?? "All routes"}</Text>
+                    <Text style={[styles.sheetChipCount, active && { color: "rgba(255,255,255,0.8)" }]}>{n}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <Text style={styles.sheetLabel}>STATUS</Text>
+            <View style={styles.sheetChips}>
+              {STATUS_OPTIONS.map((o) => {
+                const active = filterStatus === o.key;
+                const n = buses.filter((b) => matchesRoute(b) && matchesStatus(b, o.key)).length;
+                return (
+                  <TouchableOpacity
+                    key={o.key}
+                    style={[styles.sheetChip, { backgroundColor: p.chip, borderColor: p.chipBorder }, active && { backgroundColor: "#1a3cff", borderColor: "#1a3cff" }]}
+                    onPress={() => setFilterStatus(o.key)}
+                  >
+                    <Text style={[styles.sheetChipText, { color: p.chipText }, active && { color: "#fff" }]}>{o.label}</Text>
+                    <Text style={[styles.sheetChipCount, active && { color: "rgba(255,255,255,0.8)" }]}>{n}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <View style={styles.sheetFoot}>
+              <TouchableOpacity style={[styles.sheetReset, { borderColor: p.chipBorder }]} onPress={resetFilters} disabled={activeFilters === 0}>
+                <Text style={[styles.sheetResetText, { color: activeFilters ? p.text : p.subText }]}>Reset</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.sheetApply} onPress={() => setShowFilters(false)}>
+                <Text style={styles.sheetApplyText}>Show {visible.length} bus{visible.length !== 1 ? "es" : ""}</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       <View style={[styles.bottomNav, { backgroundColor: p.bottomNav, borderTopColor: p.bottomNavBorder }]}>
         <TouchableOpacity style={styles.navItem} onPress={() => router.push("/home")}>
           <Ionicons name="home-outline" size={22} color={p.subText} />
@@ -282,6 +379,24 @@ export default function MapScreen() {
 }
 
 const styles = StyleSheet.create({
+  filterBadge: { position: "absolute", top: -6, right: -8, minWidth: 16, height: 16, borderRadius: 8, backgroundColor: "#1a3cff", alignItems: "center", justifyContent: "center", paddingHorizontal: 3 },
+  filterBadgeText: { color: "#fff", fontSize: 10, fontWeight: "bold" },
+  sheetBackdrop: { flex: 1, backgroundColor: "rgba(10,14,40,0.45)", justifyContent: "flex-end" },
+  sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 10, paddingBottom: 30 },
+  sheetHandle: { alignSelf: "center", width: 40, height: 4, borderRadius: 2, backgroundColor: "#d0d3e0", marginBottom: 12 },
+  sheetHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 },
+  sheetTitle: { fontSize: 18, fontWeight: "bold" },
+  sheetLabel: { fontSize: 11, fontWeight: "700", letterSpacing: 1, color: "#999", marginTop: 14, marginBottom: 8 },
+  sheetChips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  sheetChip: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1 },
+  sheetChipText: { fontSize: 13, fontWeight: "600" },
+  sheetChipCount: { fontSize: 12, color: "#999", fontWeight: "600" },
+  sheetFoot: { flexDirection: "row", gap: 10, marginTop: 22 },
+  sheetReset: { paddingHorizontal: 22, paddingVertical: 14, borderRadius: 14, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  sheetResetText: { fontSize: 14, fontWeight: "600" },
+  sheetApply: { flex: 1, backgroundColor: "#1a3cff", borderRadius: 14, paddingVertical: 14, alignItems: "center" },
+  sheetApplyText: { color: "#fff", fontSize: 15, fontWeight: "bold" },
+
   container: { flex: 1 },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingTop: 54, paddingBottom: 10, zIndex: 1 },
   headerTitle: { fontSize: 20, fontWeight: "bold" },

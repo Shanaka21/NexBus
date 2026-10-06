@@ -7,7 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter, useLocalSearchParams } from "expo-router";
 import { apiJson, jsonBody } from "../lib/api";
 import { currentPosition } from "../lib/position";
-import { stopLabel, lkr, clockTime, LIVE_STATUS } from "../lib/format";
+import { stopLabel, lkr, clockTime, dayTime, LIVE_STATUS } from "../lib/format";
 
 type Stop = { id: string; name: string; name_si?: string };
 type Option = {
@@ -16,6 +16,15 @@ type Option = {
   reservable_seats: number; available_seats: number; fare_lkr: number; status: string; score: number;
   alight_eta_min: number | null;
 };
+
+// One ride on one bus route, as planned by the server from the route and stop data
+type Leg = {
+  route_id: string; route_number: string; route_name: string; direction: "forward" | "reverse";
+  from_stop_id: string; to_stop_id: string; from_name: string; to_name: string;
+  via: string[]; stop_count: number; km: number; minutes: number | null; fare_lkr: number;
+  departures?: number[];
+};
+type Plan = { type: "direct" | "change"; legs: Leg[]; score: number };
 
 // Plan Trip: ranked options from live ETA, delay and seat availability, with a plain-language reason
 export default function SmartSuggestionsScreen() {
@@ -28,6 +37,7 @@ export default function SmartSuggestionsScreen() {
   const [needSeat, setNeedSeat] = useState(params.need_seat === "1");
   const [pickerFor, setPickerFor] = useState<"from" | "to" | null>(null);
   const [options, setOptions] = useState<Option[]>([]);
+  const [plans, setPlans] = useState<Plan[]>([]);
   const [explanation, setExplanation] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -67,15 +77,20 @@ export default function SmartSuggestionsScreen() {
     setLoading(true);
     try {
       const query = `from_stop_id=${fromId}&to_stop_id=${toId}&need_seat=${needSeat}`;
-      const { ok, status, data } = await apiJson(`/recommendations?${query}`);
-      if (ok) {
-        setOptions(data.options);
-        setExplanation(data.explanation);
-        setMessage(data.options.length ? null : "No buses are running between these stops right now.");
+      const [live, journey] = await Promise.all([
+        apiJson(`/recommendations?${query}`),
+        apiJson(`/recommendations/journey?${query}`).catch(() => null),
+      ]);
+      const found: Plan[] = journey?.ok && Array.isArray(journey.data?.plans) ? journey.data.plans : [];
+      setPlans(found);
+      if (live.ok) {
+        setOptions(live.data.options);
+        setExplanation(live.data.explanation);
+        setMessage(live.data.options.length || found.length ? null : "No buses are running between these stops right now.");
       } else {
         setOptions([]);
         setExplanation(null);
-        setMessage(status === 404 ? "No route serves both of these stops. Try a nearby stop." : data?.error || "Could not get suggestions.");
+        setMessage(found.length ? null : live.status === 404 ? "No bus route connects these stops, even with one change. Try a nearby stop." : live.data?.error || "Could not get suggestions.");
       }
     } catch {
       setMessage("Could not connect to the server.");
@@ -91,6 +106,13 @@ export default function SmartSuggestionsScreen() {
   }, [search]);
 
   const swap = () => { setFromId(toId); setToId(fromId); };
+
+  const bookLeg = (l: Leg) =>
+    router.push({ pathname: "/newbooking", params: { route_id: l.route_id, from: l.from_stop_id, to: l.to_stop_id } } as any);
+
+  const legTime = (l: Leg) => (l.minutes != null ? `~${l.minutes + (l.direction === "reverse" ? 12 : 0)} min` : "");
+  const totalFare = (p: Plan) => p.legs.filter((l) => l.direction === "forward").reduce((sum, l) => sum + l.fare_lkr, 0);
+  const hours = (min: number) => (min >= 60 ? `${Math.floor(min / 60)} h ${min % 60} min` : `${min} min`);
 
   const book = (o: Option) =>
     router.push({ pathname: "/newbooking", params: { route_id: o.route_id, trip_id: o.trip_id, from: o.boarding_stop_id, to: o.alighting_stop_id } } as any);
@@ -188,9 +210,72 @@ export default function SmartSuggestionsScreen() {
           </View>
         )}
 
-        {loading && !best && <ActivityIndicator color="#1a3cff" style={{ marginVertical: 30 }} />}
+        {loading && !best && plans.length === 0 && <ActivityIndicator color="#1a3cff" style={{ marginVertical: 30 }} />}
 
-        {message && !loading && fromId && toId && (
+        {/* ── Which bus to take ── */}
+        {fromId && toId && plans.length > 0 && (
+          <>
+            <View style={styles.sectionRow}>
+              <Text style={styles.sectionTitle}>{plans[0].type === "direct" ? "Bus to take" : "Buses to take"}</Text>
+              {plans[0].type === "change" && <View style={styles.fastestBadge}><Text style={styles.fastestText}>NO DIRECT BUS</Text></View>}
+            </View>
+            {plans.map((p, i) => {
+              const first = p.legs[0];
+              const upcoming = first.direction === "forward" ? (first.departures || []) : [];
+              return (
+                <View key={i} style={styles.planCard}>
+                  <View style={styles.planHead}>
+                    <View style={[styles.metaChip, { backgroundColor: p.type === "direct" ? "#e8f5e9" : "#fff3e0" }]}>
+                      <Text style={[styles.metaChipText, { fontWeight: "700", color: p.type === "direct" ? "#2e7d32" : "#a96400" }]}>
+                        {p.type === "direct" ? "DIRECT" : "1 CHANGE"}
+                      </Text>
+                    </View>
+                    <Text style={styles.planSummary}>about {hours(p.score)} · {lkr(totalFare(p))}</Text>
+                  </View>
+
+                  {p.legs.map((l, li) => (
+                    <View key={l.route_id + li}>
+                      {li > 0 && (
+                        <View style={styles.changeRow}>
+                          <Ionicons name="swap-vertical" size={14} color="#a96400" />
+                          <Text style={styles.changeText}>Change buses at {p.legs[li - 1].to_name}</Text>
+                        </View>
+                      )}
+                      <View style={styles.legCard}>
+                        <View style={styles.altBadge}><Text style={styles.altBadgeText}>{l.route_number}</Text></View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.legTitle}>Take bus {l.route_number}</Text>
+                          <Text style={styles.legRoute}>{l.from_name} → {l.to_name}</Text>
+                          <Text style={styles.legMeta}>
+                            {l.stop_count} stop{l.stop_count === 1 ? "" : "s"} · {l.km} km {legTime(l) ? `· ${legTime(l)}` : ""}
+                          </Text>
+                          {l.via.length > 0 && <Text style={styles.legVia} numberOfLines={2}>via {l.via.join(", ")}</Text>}
+                          {l.direction === "reverse" && (
+                            <Text style={styles.legNote}>Runs this way too, but there is no timetable or booking for this direction yet.</Text>
+                          )}
+                        </View>
+                        {l.direction === "forward" && (
+                          <TouchableOpacity style={styles.legBook} onPress={() => bookLeg(l)}>
+                            <Ionicons name="ticket-outline" size={14} color="#1a3cff" />
+                            <Text style={styles.legBookText}>Book</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </View>
+                  ))}
+
+                  {upcoming.length > 0 ? (
+                    <Text style={styles.planNext}>Next buses from {first.from_name}: {upcoming.map((t) => dayTime(t)).join(" · ")}</Text>
+                  ) : first.direction === "forward" ? (
+                    <Text style={styles.planNext}>No more departures are scheduled on route {first.route_number} right now.</Text>
+                  ) : null}
+                </View>
+              );
+            })}
+          </>
+        )}
+
+        {message && !loading && fromId && toId && plans.length === 0 && (
           <View style={styles.promptBox}>
             <Ionicons name="bus-outline" size={40} color="#ccc" />
             <Text style={styles.promptSub}>{message}</Text>
@@ -200,7 +285,7 @@ export default function SmartSuggestionsScreen() {
         {best && (
           <>
             <View style={styles.sectionRow}>
-              <Text style={styles.sectionTitle}>Best option</Text>
+              <Text style={styles.sectionTitle}>{plans.length > 0 ? "Live now" : "Best option"}</Text>
               <View style={styles.fastestBadge}><Text style={styles.fastestText}>RECOMMENDED</Text></View>
             </View>
 
@@ -419,4 +504,19 @@ const styles = StyleSheet.create({
   pickerRowActive: { backgroundColor: "#f0f4ff" },
   pickerRowText:       { flex: 1, fontSize: 16, color: "#1a1a4e" },
   pickerRowTextActive: { fontWeight: "700", color: "#1a3cff" },
+
+  planCard:    { backgroundColor: "#fff", borderRadius: 16, padding: 14, marginBottom: 12, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 2 },
+  planHead:    { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
+  planSummary: { fontSize: 13, color: "#666", fontWeight: "600" },
+  planNext:    { fontSize: 12.5, color: "#1a3cff", fontWeight: "600", marginTop: 10, lineHeight: 18 },
+  legCard:     { flexDirection: "row", alignItems: "flex-start", gap: 12, backgroundColor: "#f7f8fd", borderRadius: 12, padding: 12 },
+  legTitle:    { fontSize: 15, fontWeight: "700", color: "#1a1a4e" },
+  legRoute:    { fontSize: 13.5, color: "#333", marginTop: 2, fontWeight: "600" },
+  legMeta:     { fontSize: 12, color: "#888", marginTop: 3 },
+  legVia:      { fontSize: 12, color: "#999", marginTop: 2 },
+  legNote:     { fontSize: 11.5, color: "#a96400", marginTop: 4 },
+  legBook:     { flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1, borderColor: "#c8d6ff", backgroundColor: "#fff", borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 },
+  legBookText: { fontSize: 12.5, fontWeight: "700", color: "#1a3cff" },
+  changeRow:   { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 8, paddingLeft: 6 },
+  changeText:  { fontSize: 12.5, color: "#a96400", fontWeight: "600" },
 });

@@ -9,16 +9,40 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
 import { apiJson } from "../lib/api";
 import { useTheme } from "../lib/themeContext";
+import { LIVE_STATUS, msAgo, dayTime } from "../lib/format";
 
 const FAVORITES_KEY = "nexbus_favorite_routes";
 
+type LiveKey = "on_time" | "delayed" | "offline";
+
 type Bus = {
-  id: string;
+  id: string;           // vehicle id, also the registration number shown on the card
   route: string;
   destination: string;
   from: string;
-  status: string;
+  live: LiveKey;
+  delay: number;
+  lastUpdate: number | null;
+  routeId: string | null;
+  departureAt: number | null; // next scheduled departure, when the bus is not running yet
 };
+
+const OFFLINE_MS = 2 * 60 * 1000;
+const POLL_MS = 10000;
+
+// A bus is live only while its trip is running and its phone keeps sending positions; after the driver ends
+// the trip (or the signal stops for 2 minutes) it is offline
+function liveKey(item: any): LiveKey {
+  const fresh = item.trip_id && item.lat != null && item.last_update_at && Date.now() - item.last_update_at <= OFFLINE_MS;
+  if (!fresh) return "offline";
+  return item.status === "delayed" || item.live_status === "delayed" || (item.delay_minutes || 0) >= 10 ? "delayed" : "on_time";
+}
+
+// live buses first, then the ones leaving soonest, then by route number
+const byLiveThenRoute = (a: Bus, b: Bus) =>
+  Number(b.live !== "offline") - Number(a.live !== "offline")
+  || (a.departureAt ?? Infinity) - (b.departureAt ?? Infinity)
+  || a.route.localeCompare(b.route, undefined, { numeric: true }) || a.id.localeCompare(b.id);
 
 const light = {
   bg:            "#fff",
@@ -67,25 +91,42 @@ export default function RoutesScreen() {
   const [loading, setLoading]           = useState(true);
   const [locationStatus, setLocationStatus] = useState<"idle" | "loading" | "granted" | "denied">("idle");
   const [locationLabel, setLocationLabel]   = useState("");
+  const [nearbyRoutes, setNearbyRoutes]     = useState<Set<string>>(new Set());
+  const [refreshing, setRefreshing]         = useState(false);
 
   const tabs = ["All Routes", "Favorites", "Nearby"];
 
-  useEffect(() => {
-    apiJson("/buses")
-      .then(({ ok, data }) => {
-        if (!ok || !Array.isArray(data)) return;
-        const mapped: Bus[] = data.map((item: any) => ({
-          id:          item.id,
-          route:       item.route_number,
-          destination: item.end_point   || item.route_number,
-          from:        item.start_point || "—",
-          status:      item.status === "delayed" || item.live_status === "delayed" ? "DELAYED" : "ON TIME",
-        }));
-        setBuses(mapped);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+  const loadBuses = useCallback(async () => {
+    try {
+      const { ok, data } = await apiJson("/buses");
+      if (!ok || !Array.isArray(data)) return;
+      setBuses(data.map((item: any): Bus => ({
+        id:          item.id,
+        route:       item.route_number,
+        destination: item.end_point   || item.route_number,
+        from:        item.start_point || "—",
+        live:        liveKey(item),
+        delay:       item.delay_minutes || 0,
+        lastUpdate:  item.last_update_at ?? null,
+        routeId:     item.route_id ?? null,
+        departureAt: item.trip_status === "scheduled" ? item.departure_at ?? null : null,
+      })).sort(byLiveThenRoute));
+    } catch { /* keep the last list */ }
+    setLoading(false);
   }, []);
+
+  // Positions change while drivers share them, so the list refreshes itself (and a trip that just ended goes offline)
+  useEffect(() => {
+    loadBuses();
+    const timer = setInterval(loadBuses, POLL_MS);
+    return () => clearInterval(timer);
+  }, [loadBuses]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadBuses();
+    setRefreshing(false);
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -111,8 +152,19 @@ export default function RoutesScreen() {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== "granted") { setLocationStatus("denied"); return; }
     const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-    const [geo] = await Location.reverseGeocodeAsync(loc.coords);
-    setLocationLabel(geo?.city || geo?.subregion || geo?.region || "your area");
+    try {
+      // The position is only used for this query; the routes with buses due at the nearest stop are "nearby"
+      const { ok, data } = await apiJson(`/stops?near=${loc.coords.latitude},${loc.coords.longitude}&limit=1`);
+      if (ok && data[0]) {
+        setLocationLabel(data[0].name);
+        const arr = await apiJson(`/stops/${data[0].id}/arrivals`);
+        setNearbyRoutes(new Set(arr.ok && Array.isArray(arr.data) ? arr.data.map((x: any) => x.route_number) : []));
+      } else {
+        setLocationLabel("your area");
+      }
+    } catch {
+      setLocationLabel("your area");
+    }
     setLocationStatus("granted");
   };
 
@@ -120,7 +172,12 @@ export default function RoutesScreen() {
     if (activeTab === "Nearby" && locationStatus === "idle") requestNearby();
   }, [activeTab]);
 
-  const displayBuses = activeTab === "Favorites" ? buses.filter((b) => favorites.has(b.id)) : buses;
+  const displayBuses =
+    activeTab === "Favorites" ? buses.filter((b) => favorites.has(b.id))
+    : activeTab === "Nearby" ? buses.filter((b) => nearbyRoutes.has(b.route))
+    : buses;
+  const liveCount = buses.filter((b) => b.live !== "offline").length;
+  const scheduledCount = buses.filter((b) => b.live === "offline" && b.departureAt).length;
 
   const renderEmpty = () => {
     if (activeTab === "Favorites") {
@@ -131,6 +188,9 @@ export default function RoutesScreen() {
           <Text style={styles.emptySubtitle}>Tap the ★ on any route to save it here</Text>
         </View>
       );
+    }
+    if (activeTab === "Nearby") {
+      return <Text style={styles.emptyText}>No buses are due at your nearest stop right now.</Text>;
     }
     return <Text style={styles.emptyText}>No buses available right now.</Text>;
   };
@@ -170,11 +230,12 @@ export default function RoutesScreen() {
       {/* Section header */}
       <View style={styles.sectionHeader}>
         <Text style={[styles.sectionTitle, { color: p.text }]}>
-          {activeTab === "Favorites" ? "Saved Routes" : activeTab === "Nearby" ? "Nearby Routes" : "Active Buses"}
+          {activeTab === "Favorites" ? "Saved Routes" : activeTab === "Nearby" ? "Nearby Routes" : "Buses"}
         </Text>
         {activeTab === "All Routes" && (
           <View style={[styles.liveTag, { backgroundColor: p.liveTagBg }]}>
-            <Text style={[styles.liveTagText, { color: p.liveTagText }]}>Live Updates</Text>
+            <View style={[styles.liveDot, { backgroundColor: liveCount > 0 ? "#4caf50" : "#9e9e9e" }]} />
+            <Text style={[styles.liveTagText, { color: p.liveTagText }]}>{liveCount} live · {scheduledCount} scheduled</Text>
           </View>
         )}
         {activeTab === "Favorites" && (
@@ -217,12 +278,15 @@ export default function RoutesScreen() {
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.list}
             ListEmptyComponent={renderEmpty()}
+            refreshing={refreshing}
+            onRefresh={onRefresh}
             renderItem={({ item }) => (
               <BusCard
                 item={item}
                 isFav={favorites.has(item.id)}
                 onToggleFav={() => toggleFavorite(item.id)}
                 onTrack={() => router.push("/map")}
+                onBook={() => router.push({ pathname: "/newbooking", params: item.routeId ? { route_id: item.routeId } : {} } as any)}
                 palette={p}
               />
             )}
@@ -253,35 +317,58 @@ export default function RoutesScreen() {
   );
 }
 
-function BusCard({ item, isFav, onToggleFav, onTrack, palette }: {
+function BusCard({ item, isFav, onToggleFav, onTrack, onBook, palette }: {
   item: Bus; isFav: boolean;
-  onToggleFav: () => void; onTrack: () => void;
+  onToggleFav: () => void; onTrack: () => void; onBook: () => void;
   palette: typeof light;
 }) {
-  const onTime = item.status === "ON TIME";
+  const offline = item.live === "offline";
+  const scheduled = offline && !!item.departureAt;
+  const st = scheduled ? LIVE_STATUS.scheduled : LIVE_STATUS[item.live];
   return (
-    <View style={[styles.busCard, { backgroundColor: palette.card, borderColor: palette.cardBorder }]}>
+    <View style={[styles.busCard, { backgroundColor: palette.card, borderColor: palette.cardBorder }, offline && !scheduled && { opacity: 0.75 }]}>
       <View style={styles.busCardTop}>
         <View style={{ flex: 1 }}>
-          <View style={[styles.statusBadge, { backgroundColor: onTime ? "#e8f5e9" : "#fff3e0" }]}>
-            <View style={[styles.statusDot, { backgroundColor: onTime ? "#4caf50" : "#ff9800" }]} />
-            <Text style={[styles.statusText, { color: onTime ? "#4caf50" : "#ff9800" }]}>{item.status}</Text>
+          <View style={[styles.statusBadge, { backgroundColor: st.bg }]}>
+            <View style={[styles.statusDot, { backgroundColor: st.color }]} />
+            <Text style={[styles.statusText, { color: st.color }]}>
+              {st.label}{item.live === "delayed" && item.delay >= 10 ? ` · ${item.delay} min late` : ""}
+            </Text>
           </View>
-          <Text style={[styles.busRoute, { color: palette.text }]}>{item.route} · {item.destination}</Text>
+          <Text style={[styles.busRoute, { color: palette.text }]} numberOfLines={1}>{item.route} · {item.destination}</Text>
           <View style={styles.etaRow}>
             <Ionicons name="location-outline" size={13} color="#888" />
-            <Text style={styles.etaText}>{item.from} → {item.destination}</Text>
+            <Text style={styles.etaText} numberOfLines={1}>{item.from} → {item.destination}</Text>
+          </View>
+          <View style={styles.etaRow}>
+            <Ionicons name="bus-outline" size={13} color="#888" />
+            <Text style={styles.etaText} numberOfLines={1}>
+              {item.id}
+              {scheduled ? ` · Departs ${dayTime(item.departureAt as number)}` : offline ? " · Not running" : ` · ${msAgo(item.lastUpdate)}`}
+            </Text>
           </View>
         </View>
         <View style={[styles.busImageBox, { backgroundColor: palette.iconBox }]}>
-          <Ionicons name="bus" size={28} color="#1a3cff" />
+          <Ionicons name="bus" size={28} color={offline && !scheduled ? "#9e9e9e" : "#1a3cff"} />
         </View>
       </View>
       <View style={styles.busCardBottom}>
-        <TouchableOpacity style={styles.trackButton} onPress={onTrack}>
-          <Ionicons name="location" size={16} color="#fff" />
-          <Text style={styles.trackButtonText}>Track Live</Text>
-        </TouchableOpacity>
+        {scheduled ? (
+          // not running yet: the useful action is to reserve a seat for the coming trip
+          <TouchableOpacity style={styles.trackButton} onPress={onBook}>
+            <Ionicons name="ticket-outline" size={16} color="#fff" />
+            <Text style={styles.trackButtonText}>Book a seat</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={[styles.trackButton, offline && styles.trackButtonOff]}
+            onPress={onTrack}
+            disabled={offline}
+          >
+            <Ionicons name={offline ? "moon-outline" : "location"} size={16} color="#fff" />
+            <Text style={styles.trackButtonText}>{offline ? "Not running" : "Track Live"}</Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity style={[styles.starButton, { borderColor: palette.starBorder }]} onPress={onToggleFav}>
           <Ionicons name={isFav ? "star" : "star-outline"} size={20} color={isFav ? "#f5a623" : "#888"} />
         </TouchableOpacity>
@@ -305,7 +392,8 @@ const styles = StyleSheet.create({
 
   sectionHeader:   { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingVertical: 14 },
   sectionTitle:    { fontSize: 18, fontWeight: "bold" },
-  liveTag:         { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20 },
+  liveTag:         { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20 },
+  liveDot:         { width: 7, height: 7, borderRadius: 4 },
   liveTagText:     { fontSize: 12 },
   countTag:        { backgroundColor: "#fff3e0", paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20 },
   countTagText:    { fontSize: 12, color: "#f5a623", fontWeight: "600" },
@@ -328,11 +416,12 @@ const styles = StyleSheet.create({
   statusDot:     { width: 6, height: 6, borderRadius: 3, marginRight: 5 },
   statusText:    { fontSize: 11, fontWeight: "bold" },
   busRoute:      { fontSize: 17, fontWeight: "bold", marginBottom: 4 },
-  etaRow:        { flexDirection: "row", alignItems: "center", gap: 4 },
+  etaRow:        { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 },
   etaText:       { fontSize: 12, color: "#888" },
   busImageBox:   { width: 56, height: 56, borderRadius: 12, alignItems: "center", justifyContent: "center", marginLeft: 10 },
   busCardBottom: { flexDirection: "row", alignItems: "center", gap: 10 },
   trackButton:   { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#1a3cff", borderRadius: 12, paddingVertical: 12, gap: 6 },
+  trackButtonOff: { backgroundColor: "#9aa0b4" },
   trackButtonText:{ color: "#fff", fontWeight: "600", fontSize: 15 },
   starButton:    { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: "center", justifyContent: "center" },
 

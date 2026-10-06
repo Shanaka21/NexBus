@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -14,7 +14,7 @@ import {
   RefreshControl,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { Stack, useRouter } from "expo-router";
+import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Location from "expo-location";
 import { apiJson } from "../lib/api";
@@ -39,7 +39,14 @@ type Bus = {
   end_point: string;
   route_name: string;
   status: string;
+  trip_id?: string | null;
+  lat?: number | null;
+  last_update_at?: number | null;
 };
+
+// A bus is live only while its trip is running and it keeps sending positions; otherwise passengers see it as offline
+const OFFLINE_MS = 2 * 60 * 1000;
+const isLive = (b: Bus) => !!b.trip_id && b.lat != null && !!b.last_update_at && Date.now() - b.last_update_at <= OFFLINE_MS;
 
 type Booking = {
   id: string;
@@ -120,6 +127,8 @@ export default function HomeScreen() {
   const [nearestStop, setNearestStop] = useState<NearestStop | null>(null);
   const [arrivals, setArrivals] = useState<Arrival[]>([]);
   const [stopLoading, setStopLoading] = useState(false);
+  const [locationNote, setLocationNote] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState(false);
   const [unread, setUnread] = useState(0);
   const [quickRoutes, setQuickRoutes] = useState<QuickRoute[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -136,8 +145,9 @@ export default function HomeScreen() {
   const findNearestStop = async () => {
     setStopLoading(true);
     try {
+      setLocationNote(null);
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") return;
+      if (status !== "granted") { setLocationNote("Location access is off. Allow it in your settings to find the stop nearest to you."); return; }
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       const { latitude, longitude } = loc.coords;
       // The position is only used for this query and is never stored by the server
@@ -146,7 +156,9 @@ export default function HomeScreen() {
         setNearestStop({ stop: data[0], distanceM: Math.round(data[0].distance_km * 1000) });
         loadArrivals(data[0].id);
       }
-    } catch { /* silently fail */ }
+    } catch {
+      setLocationNote("We could not get your location. Check that location is switched on and try again.");
+    }
     setStopLoading(false);
   };
 
@@ -159,26 +171,38 @@ export default function HomeScreen() {
     Linking.openURL(url);
   };
 
-  const loadAll = () => Promise.all([
+  const loadAll = async () => {
+    setLoadError(false);
+    const results = await loadAllRaw();
+    if (results.every((r) => r === false)) setLoadError(true);
+  };
+
+  const loadAllRaw = () => Promise.all([
     apiJson("/users/me").then(({ ok, data }) => {
       if (ok && data) { setUserPhoto(data.photo_url); setPhotoUrl(data.photo_url || null); }
-    }).catch(() => {}),
-    apiJson("/buses").then(({ ok, data }) => { if (ok && Array.isArray(data)) setBuses(data); }).catch(() => {}),
-    apiJson("/bookings/me").then(({ ok, data }) => { if (ok && Array.isArray(data)) setBookings(data); }).catch(() => {}),
+      return true;
+    }).catch(() => false),
+    apiJson("/buses").then(({ ok, data }) => { if (ok && Array.isArray(data)) setBuses(data); return true; }).catch(() => false),
+    apiJson("/bookings/me").then(({ ok, data }) => { if (ok && Array.isArray(data)) setBookings(data); return true; }).catch(() => false),
     apiJson("/notifications/me").then(({ ok, data }) => {
       if (ok && Array.isArray(data)) setUnread(data.filter((n: any) => !n.is_read).length);
-    }).catch(() => {}),
+      return true;
+    }).catch(() => false),
     apiJson("/routes").then(({ ok, data }) => {
       if (ok && Array.isArray(data)) {
         setQuickRoutes(data.slice(0, 12).map((r: any) => ({ id: r.id, number: r.route_number, from: r.start_point, to: r.end_point })));
       }
-    }).catch(() => {}),
+      return true;
+    }).catch(() => false),
   ]);
 
   useEffect(() => {
     findNearestStop(); // the nearest stop and its next buses are shown as soon as the home screen opens
     loadAll();
   }, []);
+
+  // the photo can be changed on the Profile screen, so pick it up again whenever Home comes back into view
+  useFocusEffect(useCallback(() => { setPhotoUrl(getUserPhoto()); }, []));
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -194,6 +218,7 @@ export default function HomeScreen() {
   }, [nearestStop]);
 
   const activeBooking = bookings.find((b) => b.status === "confirmed") ?? null;
+  const pendingBooking = bookings.find((b) => b.status === "pending_payment") ?? null;
   const recentRoutes  = bookings.slice(0, 3);
   const notifCount    = unread;
 
@@ -283,17 +308,21 @@ export default function HomeScreen() {
             </View>
           }
           renderItem={({ item }) => {
+            const live = isLive(item);
             const statusColor =
-              item.status === "delayed"   ? "#ff9800"
-              : item.status === "emergency" ? "#f44336"
+              item.status === "emergency" ? "#f44336"
+              : !live                     ? "#9e9e9e"
+              : item.status === "delayed" ? "#ff9800"
               : "#4caf50";
             const statusBg =
-              item.status === "delayed"   ? "#fff3e0"
-              : item.status === "emergency" ? "#ffebee"
+              item.status === "emergency" ? "#ffebee"
+              : !live                     ? "#eeeeee"
+              : item.status === "delayed" ? "#fff3e0"
               : "#e8f5e9";
             const statusLabel =
-              item.status === "delayed"   ? "DELAYED"
-              : item.status === "emergency" ? "EMERGENCY"
+              item.status === "emergency" ? "EMERGENCY"
+              : !live                     ? "OFFLINE"
+              : item.status === "delayed" ? "DELAYED"
               : "ON TIME";
             return (
               <View style={[styles.resultCard, { backgroundColor: p.card }]}>
@@ -317,7 +346,8 @@ export default function HomeScreen() {
                 </View>
                 <View style={styles.resultActions}>
                   <TouchableOpacity
-                    style={styles.trackBtn}
+                    style={[styles.trackBtn, !live && { opacity: 0.45 }]}
+                    disabled={!live}
                     onPress={() => { setSearchText(""); router.push("/map"); }}
                   >
                     <Ionicons name="location" size={14} color="#fff" />
@@ -343,6 +373,33 @@ export default function HomeScreen() {
           keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1a3cff" colors={["#1a3cff"]} />}
         >
+
+          {/* ── Connection problem ── */}
+          {loadError && (
+            <View style={styles.errorBanner}>
+              <Ionicons name="cloud-offline-outline" size={18} color="#b02f2f" />
+              <Text style={styles.errorBannerText}>Cannot reach NexBus right now. Check your connection.</Text>
+              <TouchableOpacity onPress={onRefresh}><Text style={styles.errorBannerRetry}>Retry</Text></TouchableOpacity>
+            </View>
+          )}
+
+          {/* ── Payment reminder ── */}
+          {pendingBooking && (
+            <TouchableOpacity
+              style={styles.payBanner}
+              activeOpacity={0.85}
+              onPress={() => router.push({ pathname: "/payment", params: { id: pendingBooking.id } } as any)}
+            >
+              <Ionicons name="card-outline" size={20} color="#a96400" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.payBannerTitle}>Complete your payment</Text>
+                <Text style={styles.payBannerSub} numberOfLines={1}>
+                  {pendingBooking.from} → {pendingBooking.to} · Route {pendingBooking.route}
+                </Text>
+              </View>
+              <Text style={styles.payBannerBtn}>Pay now</Text>
+            </TouchableOpacity>
+          )}
 
           {/* ── Active Booking Banner ── */}
           {activeBooking ? (
@@ -437,7 +494,7 @@ export default function HomeScreen() {
                     ? `${stopLabel(nearestStop.stop)} (${nearestStop.distanceM < 1000
                         ? `${nearestStop.distanceM}m`
                         : `${(nearestStop.distanceM / 1000).toFixed(1)}km`})`
-                    : "Tap to find your nearest stop"}
+                    : locationNote || "Tap to find your nearest stop"}
                 </Text>
               </View>
               <View style={[styles.busIconBox, { backgroundColor: p.iconBox }]}>
@@ -722,6 +779,14 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     borderRadius: 14, padding: 14, marginBottom: 20, borderWidth: 1.5,
   },
+  errorBanner: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#fbe4e4", borderRadius: 12, padding: 12, marginBottom: 14 },
+  errorBannerText: { flex: 1, fontSize: 13, color: "#8f2222" },
+  errorBannerRetry: { fontSize: 13, fontWeight: "700", color: "#1a3cff" },
+  payBanner: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#fff3e0", borderRadius: 14, padding: 14, marginBottom: 14, borderWidth: 1, borderColor: "#ffd9a0" },
+  payBannerTitle: { fontSize: 14, fontWeight: "700", color: "#7a4a00" },
+  payBannerSub: { fontSize: 12, color: "#a96400", marginTop: 2 },
+  payBannerBtn: { fontSize: 13, fontWeight: "700", color: "#fff", backgroundColor: "#ff9800", paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, overflow: "hidden" },
+
   smartBannerLeft:      { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
   smartBannerIcon:      { width: 38, height: 38, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   smartBannerTitle:     { fontSize: 14, fontWeight: "700" },

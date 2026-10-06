@@ -313,12 +313,16 @@ function RouteCard({ route, selected, onPress }: { route: RouteItem; selected: b
   );
 }
 
-// A 2 + aisle + 2 seat grid, numbered 1..reservable_seats, generated from the trip's seat map
+// 2 seats on the left, aisle, 3 seats on the right (5 per row), numbered 1..reservable_seats from the front.
+// When the seats fit exactly (e.g. 56 = 10 rows of 5 + a back bench of 6) the last row is one bench across the bus.
 function SeatGrid({ seatMap, selected, maxSeats, onToggle }: {
   seatMap: SeatMap; selected: number[]; maxSeats: number; onToggle: (n: number) => void;
 }) {
   const total = seatMap.reservable_seats;
-  const rows = Math.ceil(total / 4);
+  const backBench = total >= 11 && (total - 6) % 5 === 0;
+  const frontSeats = backBench ? total - 6 : total;
+  const rows = Math.ceil(frontSeats / 5);
+  const seatProps = { seatMap, selected, maxSeats, onToggle };
   return (
     <View style={styles.seatGridCard}>
       <View style={styles.busFront}>
@@ -326,19 +330,26 @@ function SeatGrid({ seatMap, selected, maxSeats, onToggle }: {
         <Text style={styles.busFrontText}>FRONT</Text>
       </View>
       {Array.from({ length: rows }, (_, row) => {
-        const rowSeats = [1, 2, 3, 4].map((i) => row * 4 + i).filter((n) => n <= total);
+        const rowSeats = [1, 2, 3, 4, 5].map((i) => row * 5 + i).filter((n) => n <= frontSeats);
         return (
           <View key={row} style={styles.seatRow}>
-            <View style={styles.seatPair}>
-              {rowSeats.slice(0, 2).map((n) => <Seat key={n} n={n} seatMap={seatMap} selected={selected} maxSeats={maxSeats} onToggle={onToggle} />)}
+            <View style={styles.seatSide}>
+              {rowSeats.slice(0, 2).map((n) => <Seat key={n} n={n} {...seatProps} />)}
             </View>
             <View style={styles.aisle} />
-            <View style={styles.seatPair}>
-              {rowSeats.slice(2, 4).map((n) => <Seat key={n} n={n} seatMap={seatMap} selected={selected} maxSeats={maxSeats} onToggle={onToggle} />)}
+            <View style={styles.seatSideRight}>
+              {rowSeats.slice(2, 5).map((n) => <Seat key={n} n={n} {...seatProps} />)}
             </View>
           </View>
         );
       })}
+      {backBench && (
+        <View style={styles.seatRow}>
+          <View style={styles.seatBench}>
+            {[0, 1, 2, 3, 4, 5].map((i) => <Seat key={frontSeats + i + 1} n={frontSeats + i + 1} {...seatProps} />)}
+          </View>
+        </View>
+      )}
       <View style={styles.seatLegend}>
         <LegendItem color="#fff" border="#ccc" label="Available" />
         <LegendItem color="#1a3cff" border="#1a3cff" label="Selected" />
@@ -436,8 +447,10 @@ const styles = StyleSheet.create({
   seatGridCard: { backgroundColor: "#fff", borderRadius: 14, padding: 16, marginBottom: 12, alignItems: "center" },
   busFront: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 14, borderBottomWidth: 1, borderBottomColor: "#f0f0f5", paddingBottom: 10, width: "100%", justifyContent: "center" },
   busFrontText: { fontSize: 10, fontWeight: "700", color: "#aaa", letterSpacing: 1 },
-  seatRow: { flexDirection: "row", alignItems: "center", marginBottom: 8, gap: 10 },
-  seatPair: { flexDirection: "row", gap: 8 },
+  seatRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginBottom: 8, gap: 10 },
+  seatSide: { flexDirection: "row", gap: 8, width: 80, justifyContent: "flex-start" },
+  seatSideRight: { flexDirection: "row", gap: 8, width: 124, justifyContent: "flex-end" },
+  seatBench: { flexDirection: "row", gap: 8, marginTop: 4 },
   aisle: { width: 20 },
   seat: { width: 36, height: 36, borderRadius: 8, borderWidth: 1.5, borderColor: "#ccc", backgroundColor: "#fff", alignItems: "center", justifyContent: "center" },
   seatSelected: { backgroundColor: "#1a3cff", borderColor: "#1a3cff" },

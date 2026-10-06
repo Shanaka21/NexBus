@@ -74,7 +74,10 @@ async function buildPublicBuses() {
       lng: v.lng,
       delay_minutes: v.delay_minutes,
       last_update_at: v.last_update_at,
-      trip_id: trip ? trip.id : null
+      trip_id: trip ? trip.id : null,
+      route_id: v.route_id || null,
+      trip_status: trip ? trip.status : null,
+      departure_at: trip && trip.scheduled_departure ? Number(trip.scheduled_departure) : null
     };
   });
 }

@@ -1,4 +1,6 @@
-// Seeds the pilot data: operators, stops, routes, vehicles, trips and demo accounts for every role.
+// Seeds the pilot data: one operator, six routes (177 Kaduwela - Kollupitiya, 143 Kaduwela - Pettah, 190 Meegoda - Pettah,
+// 505 Alawwa - Giriulla, 17 Panadura - Kandy, 05 Colombo - Kurunegala) with only their bus stops, their vehicles and
+// trips, and demo accounts for every role. Stop positions are approximate (OpenStreetMap town centres).
 // Safe to run again: stops, routes, vehicles and accounts are overwritten with the same ids, and
 // trips are created only when they do not exist yet, so live trip state and seat counts are kept.
 require('dotenv').config();
@@ -6,73 +8,66 @@ const bcrypt = require('bcryptjs');
 const { pool } = require('./config/db');
 
 const OPERATORS = [
-  { id: 'op-city', name: 'Colombo City Bus Services', registration_no: 'NCBS-001', contact_phone: '0112345678', email: 'ops@citybus.lk' },
-  { id: 'op-south', name: 'Southern Express Lines', registration_no: 'SEL-002', contact_phone: '0912345678', email: 'ops@southexpress.lk' }
+  { id: 'op-city', name: 'Colombo City Bus Services', registration_no: 'NCBS-001', contact_phone: '0112345678', email: 'ops@citybus.lk' }
 ];
 
-// id, English name, Sinhala name, latitude, longitude
+// id, English name, Sinhala name, latitude, longitude: only the stops of the seeded routes
 const STOPS = [
-  ['fort', 'Fort', 'කොටුව', 6.9335, 79.8500],
+  ['fort', 'Colombo Fort', 'කොළඹ කොටුව', 6.9335, 79.8500],
   ['pettah', 'Pettah', 'පිටකොටුව', 6.9374, 79.8528],
   ['maradana', 'Maradana', 'මරදාන', 6.9290, 79.8650],
   ['borella', 'Borella', 'බොරැල්ල', 6.9147, 79.8774],
+  ['kollupitiya', 'Kollupitiya', 'කොල්ලුපිටිය', 6.9109, 79.8493],
+  ['rajagiriya', 'Rajagiriya', 'රාජගිරිය', 6.9094, 79.8949],
+  ['battaramulla', 'Battaramulla', 'බත්තරමුල්ල', 6.9007, 79.9187],
+  ['malabe', 'Malabe', 'මාලබේ', 6.9047, 79.9578],
+  ['kaduwela', 'Kaduwela', 'කඩුවෙල', 6.9333, 79.9858],
   ['narahenpita', 'Narahenpita', 'නාරාහේන්පිට', 6.8960, 79.8777],
   ['nugegoda', 'Nugegoda', 'නුගේගොඩ', 6.8649, 79.8997],
   ['maharagama', 'Maharagama', 'මහරගම', 6.8480, 79.9265],
   ['kottawa', 'Kottawa', 'කොට්ටාව', 6.8412, 79.9654],
   ['homagama', 'Homagama', 'හෝමාගම', 6.8441, 80.0021],
-  ['rajagiriya', 'Rajagiriya', 'රාජගිරිය', 6.9094, 79.8949],
-  ['battaramulla', 'Battaramulla', 'බත්තරමුල්ල', 6.9007, 79.9187],
-  ['kaduwela', 'Kaduwela', 'කඩුවෙල', 6.9333, 79.9858],
-  ['hanwella', 'Hanwella', 'හංවැල්ල', 6.9005, 80.0830],
-  ['avissawella', 'Avissawella', 'අවිස්සාවේල්ල', 6.9535, 80.2104],
-  ['kollupitiya', 'Kollupitiya', 'කොල්ලුපිටිය', 6.9109, 79.8493],
-  ['bambalapitiya', 'Bambalapitiya', 'බම්බලපිටිය', 6.8892, 79.8553],
-  ['wellawatte', 'Wellawatte', 'වැල්ලවත්ත', 6.8741, 79.8590],
+  ['meegoda', 'Meegoda', 'මීගොඩ', 6.8441, 80.0460],
   ['dehiwala', 'Dehiwala', 'දෙහිවල', 6.8518, 79.8645],
   ['mount_lavinia', 'Mount Lavinia', 'ගල්කිස්ස', 6.8311, 79.8636],
   ['moratuwa', 'Moratuwa', 'මොරටුව', 6.7731, 79.8816],
   ['panadura', 'Panadura', 'පානදුර', 6.7132, 79.9026],
-  ['kalutara', 'Kalutara', 'කළුතර', 6.5854, 79.9607],
-  ['galle', 'Galle', 'ගාල්ල', 6.0329, 80.2168],
   ['kadawatha', 'Kadawatha', 'කඩවත', 7.0010, 79.9505],
   ['nittambuwa', 'Nittambuwa', 'නිට්ටඹුව', 7.1442, 80.0968],
+  ['warakapola', 'Warakapola', 'වරකාපොල', 7.2250, 80.1965],
   ['kegalle', 'Kegalle', 'කෑගල්ල', 7.2513, 80.3464],
   ['peradeniya', 'Peradeniya', 'පේරාදෙණිය', 7.2606, 80.5967],
   ['kandy', 'Kandy', 'මහනුවර', 7.2906, 80.6337],
-  ['wattala', 'Wattala', 'වත්තල', 6.9896, 79.8918],
-  ['ja_ela', 'Ja-Ela', 'ජා-ඇල', 7.0742, 79.8919],
-  ['negombo', 'Negombo', 'මීගමුව', 7.2008, 79.8737]
+  ['giriulla', 'Giriulla', 'ගිරිඋල්ල', 7.3299, 80.1225],
+  ['alawwa', 'Alawwa', 'අලව්ව', 7.2940, 80.2392],
+  ['polgahawela', 'Polgahawela', 'පොල්ගහවෙල', 7.3353, 80.3002],
+  ['kurunegala', 'Kurunegala', 'කුරුණෑගල', 7.4870, 80.3649]
 ];
 
 const ROUTES = [
-  { id: 'r138', number: '138', type: 'semi_luxury', fare: 120, minutes: 95, stops: ['pettah', 'maradana', 'borella', 'narahenpita', 'nugegoda', 'maharagama', 'kottawa', 'homagama'] },
-  { id: 'r017', number: '17', type: 'normal', fare: 80, minutes: 70, stops: ['pettah', 'maradana', 'borella', 'nugegoda', 'kottawa'] },
-  { id: 'r122', number: '122', type: 'semi_luxury', fare: 150, minutes: 120, stops: ['pettah', 'borella', 'rajagiriya', 'battaramulla', 'kaduwela', 'hanwella', 'avissawella'] },
-  { id: 'r005', number: '05', type: 'normal', fare: 70, minutes: 65, stops: ['fort', 'kollupitiya', 'bambalapitiya', 'wellawatte', 'dehiwala', 'mount_lavinia', 'moratuwa'] },
-  { id: 'r048', number: '48', type: 'semi_luxury', fare: 420, minutes: 240, stops: ['fort', 'pettah', 'kadawatha', 'nittambuwa', 'kegalle', 'peradeniya', 'kandy'] },
-  { id: 'r400', number: '400', type: 'normal', fare: 180, minutes: 90, stops: ['fort', 'pettah', 'wattala', 'ja_ela', 'negombo'] },
-  { id: 'r001', number: '01', type: 'semi_luxury', fare: 650, minutes: 210, stops: ['fort', 'mount_lavinia', 'moratuwa', 'panadura', 'kalutara', 'galle'] },
-  { id: 'rE01', number: 'E01', type: 'expressway', fare: 1100, minutes: 150, stops: ['fort', 'maharagama', 'kottawa', 'galle'] }
+  { id: 'r177', number: '177', type: 'normal', fare: 70, minutes: 60, stops: ['kaduwela', 'malabe', 'battaramulla', 'rajagiriya', 'borella', 'kollupitiya'] },
+  { id: 'r143', number: '143', type: 'normal', fare: 75, minutes: 65, stops: ['kaduwela', 'malabe', 'battaramulla', 'rajagiriya', 'borella', 'maradana', 'pettah'] },
+  { id: 'r190', number: '190', type: 'normal', fare: 100, minutes: 100, stops: ['meegoda', 'homagama', 'kottawa', 'maharagama', 'nugegoda', 'narahenpita', 'borella', 'maradana', 'pettah'] },
+  { id: 'r505', number: '505', type: 'normal', fare: 50, minutes: 30, stops: ['alawwa', 'giriulla'] },
+  { id: 'r017', number: '17', type: 'semi_luxury', fare: 520, minutes: 330, stops: ['panadura', 'moratuwa', 'mount_lavinia', 'dehiwala', 'fort', 'pettah', 'kadawatha', 'nittambuwa', 'warakapola', 'kegalle', 'peradeniya', 'kandy'] },
+  { id: 'r005', number: '05', type: 'semi_luxury', fare: 350, minutes: 200, stops: ['fort', 'pettah', 'kadawatha', 'nittambuwa', 'warakapola', 'alawwa', 'polgahawela', 'kurunegala'] }
 ];
 
 // registration number, route id, seat capacity, reservable seats, operator id
+// Every bus has 56 seats and all of them can be reserved in the app (the seat picker shows reservable_seats).
 const VEHICLES = [
-  ['NB-4521', 'r138', 54, 20, 'op-city'], ['NB-4522', 'r138', 54, 20, 'op-city'], ['NB-4523', 'r138', 54, 0, 'op-city'],
-  ['NB-1221', 'r122', 50, 16, 'op-city'], ['NB-1222', 'r122', 50, 16, 'op-city'],
-  ['NC-4801', 'r048', 54, 24, 'op-city'], ['NC-4802', 'r048', 54, 24, 'op-city'],
-  ['NC-0501', 'r005', 50, 0, 'op-city'], ['NC-0502', 'r005', 50, 12, 'op-city'],
-  ['NC-1701', 'r017', 44, 10, 'op-city'],
-  ['NC-4001', 'r400', 54, 20, 'op-city'],
-  ['SE-0101', 'r001', 54, 30, 'op-south'], ['SE-0102', 'r001', 54, 30, 'op-south'],
-  ['EX-0101', 'rE01', 45, 40, 'op-south'], ['EX-0102', 'rE01', 45, 40, 'op-south']
+  ['NB-1771', 'r177', 56, 56, 'op-city'], ['NB-1772', 'r177', 56, 56, 'op-city'],
+  ['NB-1431', 'r143', 56, 56, 'op-city'], ['NB-1432', 'r143', 56, 56, 'op-city'],
+  ['NB-1901', 'r190', 56, 56, 'op-city'], ['NB-1902', 'r190', 56, 56, 'op-city'],
+  ['NB-5051', 'r505', 56, 56, 'op-city'], ['NB-5052', 'r505', 56, 56, 'op-city'],
+  ['NB-0171', 'r017', 56, 56, 'op-city'], ['NB-0172', 'r017', 56, 56, 'op-city'],
+  ['NB-0051', 'r005', 56, 56, 'op-city'], ['NB-0052', 'r005', 56, 56, 'op-city']
 ];
 
 const ACCOUNTS = [
   { email: 'demo@nexbus.lk', password: 'Demo@1234', full_name: 'Demo User', role: 'passenger', phone: '0771234567' },
   { email: 'driver@nexbus.lk', password: 'Driver@1234', full_name: 'Nimal Perera', role: 'driver', operator_id: 'op-city', phone: '0712345601' },
   { email: 'driver2@nexbus.lk', password: 'Driver@1234', full_name: 'Sunil Fernando', role: 'driver', operator_id: 'op-city', phone: '0712345602' },
-  { email: 'southdriver@nexbus.lk', password: 'Driver@1234', full_name: 'Kamal Silva', role: 'driver', operator_id: 'op-south', phone: '0712345603' },
   { email: 'operator@nexbus.lk', password: 'Operator@1234', full_name: 'City Bus Operator', role: 'operator', operator_id: 'op-city', phone: '0112345678' },
   { email: 'admin@nexbus.lk', password: 'Admin@1234', full_name: 'NexBus Admin', role: 'admin', phone: '0112000000' }
 ];
@@ -177,6 +172,17 @@ async function seed() {
       [reg, operatorId, routeId, capacity, reservable, now]
     );
   }
+  // Trips that were created earlier keep the seat counts of the time: bring the upcoming ones in line with the
+  // vehicle, minus the seats that are already held or paid for
+  for (const [reg, , , reservable] of VEHICLES) {
+    await pool.query(
+      `UPDATE trips SET reservable_seats = $1::int,
+              available_seats = GREATEST(0, $1::int - COALESCE((SELECT SUM(seat_count) FROM bookings b
+                                                          WHERE b.trip_id = trips.id AND b.status IN ('pending_payment', 'confirmed')), 0)::int)
+        WHERE vehicle_id = $2 AND status = 'scheduled'`,
+      [reservable, reg]
+    );
+  }
   console.log(`  ✓ ${VEHICLES.length} vehicles`);
 
   console.log('Seeding accounts...');
@@ -187,7 +193,7 @@ async function seed() {
   }
 
   console.log('Seeding trips...');
-  const driverFor = { 'op-city': ['driver@nexbus.lk', 'driver2@nexbus.lk'], 'op-south': ['southdriver@nexbus.lk'] };
+  const driverFor = { 'op-city': ['driver@nexbus.lk', 'driver2@nexbus.lk'] };
   const today = colomboMidnight(now);
   const slots = [7 * 60, 12 * 60 + 30, 17 * 60 + 30]; // minutes after midnight
   const existing = new Set((await pool.query('SELECT id FROM trips')).rows.map(r => r.id));
@@ -232,9 +238,9 @@ async function seed() {
 
   console.log('Seeding demo bookings...');
   const demoUid = uids['demo@nexbus.lk'];
-  const upcomingId = `seed-NB-4521-${dayKey(today)}-demo`;
-  const pastTripId = 'seed-past-r122';
-  const pastTrip = { ...tripDoc(3, now - 2 * DAY_MS), status: 'completed', actual_departure: now - 2 * DAY_MS, available_seats: 16 };
+  const upcomingId = `seed-NB-1771-${dayKey(today)}-demo`;
+  const pastTripId = 'seed-past-r143';
+  const pastTrip = { ...tripDoc(2, now - 2 * DAY_MS), status: 'completed', actual_departure: now - 2 * DAY_MS, available_seats: 16 };
   const pastExisted = existing.has(pastTripId);
   if (pastExisted) {
     await pool.query('UPDATE trips SET status=$1, actual_departure=$2, available_seats=$3 WHERE id=$4', [pastTrip.status, pastTrip.actual_departure, pastTrip.available_seats, pastTripId]);
@@ -243,9 +249,9 @@ async function seed() {
   }
 
   const bookings = [
-    { key: 0, trip: upcomingId, route: 'r138', from: 'pettah', to: 'nugegoda', seats: 2, status: 'confirmed', pay: 'success', age: 0, seatsHeld: true },
-    { key: 1, trip: pastTripId, route: 'r122', from: 'pettah', to: 'kaduwela', seats: 1, status: 'completed', pay: 'success', age: 2 },
-    { key: 2, trip: pastTripId, route: 'r122', from: 'borella', to: 'hanwella', seats: 3, status: 'cancelled', pay: 'unpaid', age: 5 }
+    { key: 0, trip: upcomingId, route: 'r177', from: 'kaduwela', to: 'borella', seats: 2, status: 'confirmed', pay: 'success', age: 0, seatsHeld: true },
+    { key: 1, trip: pastTripId, route: 'r143', from: 'kaduwela', to: 'pettah', seats: 1, status: 'completed', pay: 'success', age: 2 },
+    { key: 2, trip: pastTripId, route: 'r143', from: 'borella', to: 'maradana', seats: 3, status: 'cancelled', pay: 'unpaid', age: 5 }
   ];
   for (const bk of bookings) {
     const id = `demo-${demoUid}-${bk.key}`;
