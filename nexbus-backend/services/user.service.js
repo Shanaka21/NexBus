@@ -9,7 +9,7 @@ function row(r) {
   return {
     uid: r.id, full_name: r.full_name, name: r.full_name, email: r.email, phone: r.phone || '',
     role: r.role, operator_id: r.operator_id || null, status: r.status, preferred_language: r.preferred_language,
-    region: r.region || undefined, push_token: r.push_token || undefined, created_at: Number(r.created_at)
+    region: r.region || undefined, push_token: r.push_token || undefined, photo_url: r.photo_url || null, created_at: Number(r.created_at)
   };
 }
 
@@ -70,4 +70,14 @@ async function updateProfile(uid, patch) {
   return getProfile(uid);
 }
 
-module.exports = { createAccount, getProfile, ensurePassengerProfile, updateProfile };
+// Stores the new photo (or clears it with null) and returns the key of the one it replaces, so the caller can delete that file
+async function setPhoto(uid, photo) {
+  const { rows } = await pool.query('SELECT photo_key FROM users WHERE id = $1', [uid]);
+  if (!rows[0]) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
+  await pool.query('UPDATE users SET photo_url = $1, photo_key = $2, updated_at = $3 WHERE id = $4',
+    [photo ? photo.url : null, photo ? photo.key : null, Date.now(), uid]);
+  clearProfileCache(uid);
+  return { previousKey: rows[0].photo_key, profile: await getProfile(uid) };
+}
+
+module.exports = { createAccount, getProfile, ensurePassengerProfile, updateProfile, setPhoto };

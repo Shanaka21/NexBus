@@ -9,7 +9,9 @@ import {
   TextInput,
   FlatList,
   Linking,
+  Image,
   Platform,
+  RefreshControl,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter } from "expo-router";
@@ -18,6 +20,7 @@ import * as Location from "expo-location";
 import { apiJson } from "../lib/api";
 import { stopLabel, LIVE_STATUS, secondsAgo } from "../lib/format";
 import { useTheme } from "../lib/themeContext";
+import { getUserName, getUserPhoto, setUserPhoto } from "../lib/userSession";
 
 type ApiStop = { id: string; name: string; name_si?: string; latitude: number; longitude: number };
 
@@ -88,6 +91,22 @@ const dark = {
   divider:          "#2a2a4e",
 };
 
+const greeting = () => {
+  const h = new Date().getHours();
+  return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+};
+
+const initials = (name: string) =>
+  name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("") || "N";
+
+type QuickAction = { label: string; icon: keyof typeof Ionicons.glyphMap; route: string; tint: string };
+const QUICK_ACTIONS: QuickAction[] = [
+  { label: "Live Map",   icon: "map",       route: "/map",              tint: "#1a3cff" },
+  { label: "Book",       icon: "ticket",    route: "/newbooking",       tint: "#0ea5a4" },
+  { label: "Assistant",  icon: "sparkles",  route: "/assistant",        tint: "#7c3aed" },
+  { label: "Suggest",    icon: "bulb",      route: "/smartsuggestions", tint: "#f59e0b" },
+];
+
 export default function HomeScreen() {
   const router = useRouter();
   const { isDark } = useTheme();
@@ -103,6 +122,9 @@ export default function HomeScreen() {
   const [stopLoading, setStopLoading] = useState(false);
   const [unread, setUnread] = useState(0);
   const [quickRoutes, setQuickRoutes] = useState<QuickRoute[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const userName = getUserName() || "there";
+  const [photoUrl, setPhotoUrl] = useState<string | null>(getUserPhoto());
 
   const loadArrivals = async (stopId: string) => {
     try {
@@ -137,20 +159,32 @@ export default function HomeScreen() {
     Linking.openURL(url);
   };
 
-  useEffect(() => {
-    findNearestStop(); // the nearest stop and its next buses are shown as soon as the home screen opens
-
-    apiJson("/buses").then(({ ok, data }) => { if (ok && Array.isArray(data)) setBuses(data); }).catch(() => {});
-    apiJson("/bookings/me").then(({ ok, data }) => { if (ok && Array.isArray(data)) setBookings(data); }).catch(() => {});
+  const loadAll = () => Promise.all([
+    apiJson("/users/me").then(({ ok, data }) => {
+      if (ok && data) { setUserPhoto(data.photo_url); setPhotoUrl(data.photo_url || null); }
+    }).catch(() => {}),
+    apiJson("/buses").then(({ ok, data }) => { if (ok && Array.isArray(data)) setBuses(data); }).catch(() => {}),
+    apiJson("/bookings/me").then(({ ok, data }) => { if (ok && Array.isArray(data)) setBookings(data); }).catch(() => {}),
     apiJson("/notifications/me").then(({ ok, data }) => {
       if (ok && Array.isArray(data)) setUnread(data.filter((n: any) => !n.is_read).length);
-    }).catch(() => {});
+    }).catch(() => {}),
     apiJson("/routes").then(({ ok, data }) => {
       if (ok && Array.isArray(data)) {
         setQuickRoutes(data.slice(0, 12).map((r: any) => ({ id: r.id, number: r.route_number, from: r.start_point, to: r.end_point })));
       }
-    }).catch(() => {});
+    }).catch(() => {}),
+  ]);
+
+  useEffect(() => {
+    findNearestStop(); // the nearest stop and its next buses are shown as soon as the home screen opens
+    loadAll();
   }, []);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([loadAll(), findNearestStop()]);
+    setRefreshing(false);
+  };
 
   // Arrival times change as buses move
   useEffect(() => {
@@ -184,18 +218,28 @@ export default function HomeScreen() {
 
       {/* Header */}
       <View style={[styles.header, { backgroundColor: p.bg }]}>
-        <TouchableOpacity onPress={() => router.push("/sidebar")}>
-          <Ionicons name="menu" size={26} color={p.text} />
+        <TouchableOpacity style={styles.avatar} onPress={() => router.push("/sidebar")} activeOpacity={0.8}>
+          {photoUrl ? (
+            <Image source={{ uri: photoUrl }} style={styles.avatarPhoto} />
+          ) : (
+            <LinearGradient colors={["#4f86f7", "#1a3cff", "#0d1b6e"]} style={styles.avatarGradient}>
+              <Text style={styles.avatarText}>{initials(userName)}</Text>
+            </LinearGradient>
+          )}
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: p.text }]}>NexBus</Text>
+        <View style={styles.headerText}>
+          <Text style={styles.headerGreeting}>{greeting()}</Text>
+          <Text style={[styles.headerTitle, { color: p.text }]} numberOfLines={1}>{userName}</Text>
+        </View>
         <TouchableOpacity
-          style={styles.bellWrapper}
+          style={[styles.bellWrapper, { backgroundColor: p.card }]}
           onPress={() => router.push("/notifications")}
+          activeOpacity={0.8}
         >
-          <Ionicons name="notifications-outline" size={26} color={p.text} />
+          <Ionicons name="notifications-outline" size={22} color={p.text} />
           {notifCount > 0 && (
             <View style={styles.badge}>
-              <Text style={styles.badgeText}>{notifCount}</Text>
+              <Text style={styles.badgeText}>{notifCount > 9 ? "9+" : notifCount}</Text>
             </View>
           )}
         </TouchableOpacity>
@@ -207,7 +251,7 @@ export default function HomeScreen() {
           <Ionicons name="search-outline" size={18} color="#aaa" />
           <TextInput
             style={[styles.searchInput, { color: p.searchText }]}
-            placeholder="Search route or destination..."
+            placeholder="Where are you heading?"
             placeholderTextColor="#aaa"
             value={searchText}
             onChangeText={setSearchText}
@@ -297,6 +341,7 @@ export default function HomeScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1a3cff" colors={["#1a3cff"]} />}
         >
 
           {/* ── Active Booking Banner ── */}
@@ -337,63 +382,28 @@ export default function HomeScreen() {
             </TouchableOpacity>
           )}
 
-          {/* ── View Live Map ── */}
-          <TouchableOpacity onPress={() => router.push("/map")}>
-            <LinearGradient
-              colors={["#1a3cff", "#0d1b6e"]}
-              style={styles.mapButton}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-            >
-              <Ionicons name="map" size={20} color="#fff" />
-              <Text style={styles.mapButtonText}>View Live Map</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-
-          {/* ── Chat assistant ── */}
-          <TouchableOpacity
-            style={[styles.smartBanner, { backgroundColor: p.smartBanner, borderColor: p.smartBannerBorder }]}
-            onPress={() => router.push("/assistant" as any)}
-            activeOpacity={0.85}
-          >
-            <View style={styles.smartBannerLeft}>
-              <View style={[styles.smartBannerIcon, { backgroundColor: p.card }]}>
-                <Ionicons name="sparkles" size={20} color="#1a3cff" />
-              </View>
-              <View>
-                <Text style={[styles.smartBannerTitle, { color: p.text }]}>NexBus Assistant</Text>
-                <Text style={styles.smartBannerSub}>Chat, ask for a bus in English or Sinhala</Text>
-              </View>
-            </View>
-            <View style={styles.smartBannerArrow}>
-              <Text style={styles.smartBannerArrowText}>Chat</Text>
-              <Ionicons name="arrow-forward" size={14} color="#1a3cff" />
-            </View>
-          </TouchableOpacity>
-
-          {/* ── Smart Suggestions Banner ── */}
-          <TouchableOpacity
-            style={[styles.smartBanner, { backgroundColor: p.smartBanner, borderColor: p.smartBannerBorder }]}
-            onPress={() => router.push("/smartsuggestions" as any)}
-            activeOpacity={0.85}
-          >
-            <View style={styles.smartBannerLeft}>
-              <View style={[styles.smartBannerIcon, { backgroundColor: p.card }]}>
-                <Ionicons name="bulb" size={20} color="#1a3cff" />
-              </View>
-              <View>
-                <Text style={[styles.smartBannerTitle, { color: p.text }]}>Smart Suggestions</Text>
-                <Text style={styles.smartBannerSub}>Find your best route instantly</Text>
-              </View>
-            </View>
-            <View style={styles.smartBannerArrow}>
-              <Text style={styles.smartBannerArrowText}>Try Now</Text>
-              <Ionicons name="arrow-forward" size={14} color="#1a3cff" />
-            </View>
-          </TouchableOpacity>
+          {/* ── Quick actions ── */}
+          <View style={styles.actionGrid}>
+            {QUICK_ACTIONS.map((a) => (
+              <TouchableOpacity
+                key={a.label}
+                style={styles.actionItem}
+                onPress={() => router.push(a.route as any)}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.actionIcon, { backgroundColor: a.tint + "1f" }]}>
+                  <Ionicons name={a.icon} size={24} color={a.tint} />
+                </View>
+                <Text style={[styles.actionLabel, { color: p.text }]}>{a.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
 
           {/* ── Quick Book ── */}
-          <Text style={[styles.sectionTitle, { color: p.text }]}>Quick Book</Text>
+          <View style={styles.sectionRow}>
+            <Text style={[styles.sectionTitle, { color: p.text }]}>Quick Book</Text>
+            <TouchableOpacity onPress={() => router.push("/routes")}><Text style={styles.seeAll}>See all</Text></TouchableOpacity>
+          </View>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -510,7 +520,10 @@ export default function HomeScreen() {
           )}
 
           {/* ── Recent Routes ── */}
-          <Text style={[styles.sectionTitle, { color: p.text }]}>Recent Routes</Text>
+          <View style={styles.sectionRow}>
+            <Text style={[styles.sectionTitle, { color: p.text }]}>Recent Routes</Text>
+            <TouchableOpacity onPress={() => router.push("/bookings")}><Text style={styles.seeAll}>See all</Text></TouchableOpacity>
+          </View>
 
           {recentRoutes.length > 0 ? (
             recentRoutes.map((b) => {
@@ -569,8 +582,10 @@ export default function HomeScreen() {
       {/* Bottom Nav */}
       <View style={[styles.bottomNav, { backgroundColor: p.bottomNav, borderTopColor: p.bottomNavBorder }]}>
         <TouchableOpacity style={styles.navItem}>
-          <Ionicons name="home" size={22} color="#1a3cff" />
-          <Text style={[styles.navText, { color: "#1a3cff" }]}>Home</Text>
+          <View style={[styles.navPill, { backgroundColor: p.iconBox }]}>
+            <Ionicons name="home" size={22} color="#1a3cff" />
+          </View>
+          <Text style={[styles.navText, { color: "#1a3cff", fontWeight: "700" }]}>Home</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.navItem} onPress={() => router.push("/routes")}>
           <Ionicons name="bus-outline" size={22} color={p.subText} />
@@ -599,12 +614,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 54,
     paddingBottom: 12,
+    gap: 12,
   },
-  headerTitle: { fontSize: 20, fontWeight: "bold" },
-  bellWrapper: { position: "relative" },
+  avatar: { width: 44, height: 44, borderRadius: 22, overflow: "hidden" },
+  avatarGradient: { flex: 1, alignItems: "center", justifyContent: "center" },
+  avatarPhoto: { width: 44, height: 44 },
+  avatarText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
+  headerText: { flex: 1 },
+  headerGreeting: { fontSize: 12, color: "#888", fontWeight: "500" },
+  headerTitle: { fontSize: 19, fontWeight: "bold", marginTop: 1 },
+  bellWrapper: {
+    position: "relative", width: 42, height: 42, borderRadius: 21,
+    alignItems: "center", justifyContent: "center",
+    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.07, shadowRadius: 4, elevation: 2,
+  },
   badge: {
     position: "absolute",
-    top: -4, right: -4,
+    top: -2, right: -2,
     backgroundColor: "#f44336",
     borderRadius: 8,
     minWidth: 16, height: 16,
@@ -683,7 +709,14 @@ const styles = StyleSheet.create({
   },
   mapButtonText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
 
-  sectionTitle: { fontSize: 17, fontWeight: "bold", marginBottom: 12 },
+  sectionRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
+  sectionTitle: { fontSize: 17, fontWeight: "bold" },
+  seeAll: { fontSize: 13, fontWeight: "600", color: "#1a3cff" },
+
+  actionGrid: { flexDirection: "row", justifyContent: "space-between", marginBottom: 22 },
+  actionItem: { width: "23%", alignItems: "center", gap: 8 },
+  actionIcon: { width: 62, height: 62, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  actionLabel: { fontSize: 12, fontWeight: "600" },
 
   smartBanner: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
@@ -710,7 +743,7 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: 16, padding: 16, marginBottom: 20,
     shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
+    shadowOpacity: 0.08, shadowRadius: 10, elevation: 3,
   },
   cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 },
   cardTitle:    { fontSize: 16, fontWeight: "bold" },
@@ -756,5 +789,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1, paddingVertical: 10, paddingBottom: 24,
   },
   navItem: { flex: 1, alignItems: "center", gap: 3 },
+  navPill: { paddingHorizontal: 18, paddingVertical: 4, borderRadius: 14 },
   navText:  { fontSize: 11 },
 });

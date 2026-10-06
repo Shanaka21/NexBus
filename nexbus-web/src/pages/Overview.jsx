@@ -4,15 +4,36 @@ import { useAuth } from '../auth'
 import { useFleet, POLL_MS } from '../useFleet'
 import { FleetMap } from '../LiveMap'
 import { LIVE, ago } from '../format'
+import { AlertIcon, BusIcon, CalendarIcon, CheckIcon, ClockIcon, TicketIcon, WalletIcon } from '../icons'
 import { Badge, Card, ErrorBox, PageHeader, Spinner, Table, useLoad } from '../ui'
 
-const Stat = ({ label, value, sub, tone }) => (
+const Stat = ({ label, value, sub, tone, Icon }) => (
   <div className={`stat ${tone ? `tone-${tone}` : ''}`}>
-    <div className="stat-label">{label}</div>
+    <div className="stat-top">
+      <div className="stat-label">{label}</div>
+      {Icon && <span className="stat-icon"><Icon size={18} /></span>}
+    </div>
     <div className="stat-value">{value}</div>
     {sub && <div className="stat-sub">{sub}</div>}
   </div>
 )
+
+const greeting = () => {
+  const h = Number(new Date().toLocaleString('en-GB', { hour: 'numeric', hour12: false, timeZone: 'Asia/Colombo' }))
+  return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'
+}
+
+const today = () => new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Colombo' })
+
+const StatusSummary = ({ buses }) => {
+  const count = (key) => buses.filter((b) => b.live === key).length
+  return (
+    <div className="status-summary">
+      <Badge tone="green">{count('on_time')} on time</Badge>
+      <Badge tone="amber">{count('delayed')} delayed</Badge>
+    </div>
+  )
+}
 
 export default function Overview() {
   const { user } = useAuth()
@@ -25,22 +46,22 @@ export default function Overview() {
   return (
     <>
       <PageHeader
-        title="Overview"
-        subtitle={user.role === 'admin' ? 'All operators' : 'Your fleet today'}
+        title={`${greeting()}, ${user.name.split(' ')[0]}`}
+        subtitle={`${today()} · ${user.role === 'admin' ? 'All operators' : 'Your fleet today'}`}
         actions={<span className="live-pill"><span className={`live-dot${live ? '' : ' off'}`} />{live ? 'Live' : `Updating every ${POLL_MS / 1000} s`}</span>}
       />
       <ErrorBox error={error} onRetry={reload} />
 
       {stats && (
         <div className="stat-grid">
-          <Stat label="Buses" value={stats.buses.total} sub={`${stats.buses.active} active`} />
-          <Stat label="Running trips" value={stats.trips.running} tone="green" sub={`${stats.trips.scheduled_today} more scheduled today`} />
-          <Stat label="Delayed" value={stats.trips.delayed} tone={stats.trips.delayed ? 'amber' : undefined} sub="trips 10+ min late" />
-          <Stat label="Emergency / inactive" value={stats.buses.emergency + stats.buses.inactive} tone={stats.buses.emergency ? 'red' : undefined} />
-          <Stat label="Bookings today" value={stats.bookings.today} sub={`${stats.bookings.total} in total`} />
-          <Stat label="Awaiting payment" value={stats.bookings.pending_payment} tone={stats.bookings.pending_payment ? 'amber' : undefined} />
-          <Stat label="Confirmed" value={stats.bookings.confirmed} tone="green" />
-          <Stat label="Completed / cancelled" value={`${stats.bookings.completed} / ${stats.bookings.cancelled}`} />
+          <Stat Icon={BusIcon} label="Buses" value={stats.buses.total} sub={`${stats.buses.active} active`} />
+          <Stat Icon={CalendarIcon} label="Running trips" value={stats.trips.running} tone="green" sub={`${stats.trips.scheduled_today} more scheduled today`} />
+          <Stat Icon={ClockIcon} label="Delayed" value={stats.trips.delayed} tone={stats.trips.delayed ? 'amber' : undefined} sub="trips 10+ min late" />
+          <Stat Icon={AlertIcon} label="Emergency / inactive" value={stats.buses.emergency + stats.buses.inactive} tone={stats.buses.emergency ? 'red' : undefined} />
+          <Stat Icon={TicketIcon} label="Bookings today" value={stats.bookings.today} sub={`${stats.bookings.total} in total`} />
+          <Stat Icon={WalletIcon} label="Awaiting payment" value={stats.bookings.pending_payment} tone={stats.bookings.pending_payment ? 'amber' : undefined} />
+          <Stat Icon={CheckIcon} label="Confirmed" value={stats.bookings.confirmed} tone="green" />
+          <Stat Icon={CheckIcon} label="Completed / cancelled" value={`${stats.bookings.completed} / ${stats.bookings.cancelled}`} />
         </div>
       )}
 
@@ -49,7 +70,7 @@ export default function Overview() {
           <FleetMap buses={fleet.filter((f) => f.running)} />
         </Card>
 
-        <Card title={`Running now (${running.length})`} flush>
+        <Card title={`Running now (${running.length})`} actions={<StatusSummary buses={running} />} flush>
           <Table
             empty="No buses are running right now."
             rows={running}

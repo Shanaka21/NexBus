@@ -1,18 +1,15 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
   StatusBar, ScrollView, TextInput, Alert, ActivityIndicator, Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { Stack, useRouter, useFocusEffect } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { getUserId, getUserName, getUserEmail, setUserName } from "../lib/userSession";
+import { getUserId, getUserName, getUserEmail, setUserName, getUserPhoto, setUserPhoto } from "../lib/userSession";
 import { apiJson, jsonBody } from "../lib/api";
 import { useTheme } from "../lib/themeContext";
-
-const AVATAR_KEY = "nexbus_avatar_uri";
 
 const light = {
   bg:         "#f0f0f5",
@@ -50,7 +47,8 @@ export default function ProfileScreen() {
   const [displayName, setDisplayName] = useState(getUserName() || "Guest User");
   const initials = displayName.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2) || "U";
 
-  const [avatarUri, setAvatarUri]   = useState<string | null>(null);
+  const [avatarUri, setAvatarUri]   = useState<string | null>(getUserPhoto());
+  const [uploading, setUploading]   = useState(false);
   const [stats, setStats]           = useState({ total: 0, confirmed: 0, completed: 0, cancelled: 0 });
   const [profile, setProfile]       = useState({ phone: "", region: "Sri Lanka", role: "passenger" });
   const [editing, setEditing]       = useState(false);
@@ -59,18 +57,14 @@ export default function ProfileScreen() {
   const [editRegion, setEditRegion] = useState("Sri Lanka");
   const [saving, setSaving]         = useState(false);
 
-  useFocusEffect(
-    useCallback(() => {
-      AsyncStorage.getItem(AVATAR_KEY).then((uri) => { if (uri) setAvatarUri(uri); });
-    }, [])
-  );
-
   useEffect(() => {
     if (!uid) return;
 
     apiJson("/users/me")
       .then(({ ok, data }) => {
         if (ok && data.uid) {
+          setAvatarUri(data.photo_url || null);
+          setUserPhoto(data.photo_url);
           const pr = { phone: data.phone || "", region: data.region || "Sri Lanka", role: data.role || "passenger" };
           setProfile(pr);
           setEditPhone(pr.phone);
@@ -102,33 +96,61 @@ export default function ProfileScreen() {
   const roleLabel = profile.role === "operator" ? "Bus Operator" : profile.role === "driver" ? "Bus Driver" : profile.role === "admin" ? "Administrator" : "Passenger";
   const isDriver = profile.role === "driver";
 
+  // The photo is sent to the NexBus API, which stores it on UploadThing; the access token never reaches the app
+  const uploadAvatar = async (asset: ImagePicker.ImagePickerAsset) => {
+    if (!asset.base64) { Alert.alert("Error", "Could not read the selected photo."); return; }
+    setUploading(true);
+    try {
+      const { ok, data } = await apiJson("/users/me/photo", {
+        method: "PUT",
+        ...jsonBody({ image: `data:${asset.mimeType || "image/jpeg"};base64,${asset.base64}` }),
+      });
+      if (ok) {
+        setAvatarUri(data.photo_url);
+        setUserPhoto(data.photo_url);
+      } else {
+        Alert.alert("Upload failed", data?.error || "Could not upload the photo. Try again.");
+      }
+    } catch {
+      Alert.alert("Error", "Network error. Check your connection.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removeAvatar = async () => {
+    setUploading(true);
+    try {
+      const { ok, data } = await apiJson("/users/me/photo", { method: "DELETE" });
+      if (ok) { setAvatarUri(null); setUserPhoto(null); }
+      else Alert.alert("Error", data?.error || "Could not remove the photo.");
+    } catch {
+      Alert.alert("Error", "Network error. Check your connection.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const pickAvatar = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") { Alert.alert("Permission Required", "Allow photo access to set a profile picture."); return; }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.7 });
-    if (!result.canceled && result.assets[0]?.uri) {
-      const uri = result.assets[0].uri;
-      setAvatarUri(uri);
-      await AsyncStorage.setItem(AVATAR_KEY, uri);
-    }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.6, base64: true });
+    if (!result.canceled && result.assets[0]) await uploadAvatar(result.assets[0]);
   };
 
   const takePhoto = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== "granted") { Alert.alert("Permission Required", "Allow camera access to take a profile photo."); return; }
-    const result = await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.7 });
-    if (!result.canceled && result.assets[0]?.uri) {
-      const uri = result.assets[0].uri;
-      setAvatarUri(uri);
-      await AsyncStorage.setItem(AVATAR_KEY, uri);
-    }
+    const result = await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.6, base64: true });
+    if (!result.canceled && result.assets[0]) await uploadAvatar(result.assets[0]);
   };
 
   const showAvatarOptions = () => {
+    if (uploading) return;
     Alert.alert("Profile Photo", "Choose an option", [
       { text: "Take Photo",          onPress: takePhoto },
       { text: "Choose from Library", onPress: pickAvatar },
-      ...(avatarUri ? [{ text: "Remove Photo", style: "destructive" as const, onPress: async () => { setAvatarUri(null); await AsyncStorage.removeItem(AVATAR_KEY); } }] : []),
+      ...(avatarUri ? [{ text: "Remove Photo", style: "destructive" as const, onPress: removeAvatar }] : []),
       { text: "Cancel", style: "cancel" },
     ]);
   };
@@ -189,6 +211,11 @@ export default function ProfileScreen() {
             ) : (
               <View style={[styles.avatarCircle, { backgroundColor: p.iconBox }]}>
                 <Text style={styles.avatarInitials}>{initials}</Text>
+              </View>
+            )}
+            {uploading && (
+              <View style={styles.avatarBusy}>
+                <ActivityIndicator color="#fff" />
               </View>
             )}
             <View style={styles.cameraBadge}>
@@ -339,6 +366,7 @@ const styles = StyleSheet.create({
 
   avatarCard:     { borderRadius: 20, padding: 24, alignItems: "center", marginBottom: 16, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 2 },
   avatarWrapper:  { position: "relative", marginBottom: 14 },
+  avatarBusy:     { position: "absolute", top: 0, left: 0, width: 88, height: 88, borderRadius: 44, backgroundColor: "rgba(13,27,110,0.55)", alignItems: "center", justifyContent: "center" },
   avatarImage:    { width: 88, height: 88, borderRadius: 44, borderWidth: 3, borderColor: "#1a3cff" },
   avatarCircle:   { width: 88, height: 88, borderRadius: 44, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: "#1a3cff" },
   avatarInitials: { fontSize: 32, fontWeight: "bold", color: "#1a3cff" },

@@ -1,48 +1,77 @@
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../auth'
+import { BuildingIcon, BusIcon, CalendarIcon, ChartIcon, ChevronLeftIcon, GridIcon, LogoutIcon, MoonIcon, RadarIcon, RouteIcon, ShieldIcon, SunIcon, TicketIcon, UserIcon, UsersIcon } from '../icons'
 
 const OPERATOR_NAV = [
-  { to: '/', label: 'Overview', icon: '▦', end: true },
-  { to: '/fleet', label: 'Fleet Monitor', icon: '◉' },
-  { to: '/vehicles', label: 'Vehicles', icon: '🚌' },
-  { to: '/drivers', label: 'Drivers', icon: '👤' },
-  { to: '/trips', label: 'Trips', icon: '🗓' },
-  { to: '/routes', label: 'Routes & Stops', icon: '⌖' },
-  { to: '/bookings', label: 'Bookings & Payments', icon: '🎫' },
-  { to: '/reports', label: 'Reports', icon: '📊' },
+  { to: '/', label: 'Overview', Icon: GridIcon, end: true },
+  { to: '/fleet', label: 'Fleet Monitor', Icon: RadarIcon },
+  { to: '/vehicles', label: 'Vehicles', Icon: BusIcon },
+  { to: '/drivers', label: 'Drivers', Icon: UserIcon },
+  { to: '/trips', label: 'Trips', Icon: CalendarIcon },
+  { to: '/routes', label: 'Routes & Stops', Icon: RouteIcon },
+  { to: '/bookings', label: 'Bookings & Payments', Icon: TicketIcon },
+  { to: '/reports', label: 'Reports', Icon: ChartIcon },
 ]
 
 const ADMIN_NAV = [
-  { to: '/', label: 'Overview', icon: '▦', end: true },
-  { to: '/fleet', label: 'Fleet Monitor', icon: '◉' },
-  { to: '/routes', label: 'Routes & Stops', icon: '⌖' },
-  { to: '/operators', label: 'Operators', icon: '🏢' },
-  { to: '/users', label: 'Users', icon: '👥' },
-  { to: '/logs', label: 'Audit Logs', icon: '🛡' },
+  { to: '/', label: 'Overview', Icon: GridIcon, end: true },
+  { to: '/fleet', label: 'Fleet Monitor', Icon: RadarIcon },
+  { to: '/routes', label: 'Routes & Stops', Icon: RouteIcon },
+  { to: '/operators', label: 'Operators', Icon: BuildingIcon },
+  { to: '/users', label: 'Users', Icon: UsersIcon },
+  { to: '/logs', label: 'Audit Logs', Icon: ShieldIcon },
 ]
+
+const initials = (name = '') => name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0].toUpperCase()).join('') || '?'
+
+const read = (key, fallback) => { try { return localStorage.getItem(key) ?? fallback } catch { return fallback } }
+const write = (key, value) => { try { localStorage.setItem(key, value) } catch { /* storage unavailable */ } }
 
 export default function Layout() {
   const { user, logout } = useAuth()
+  const [collapsed, setCollapsed] = useState(() => read('nexbus-sidebar', 'open') === 'closed')
+  const [theme, setTheme] = useState(() => document.documentElement.dataset.theme || 'light')
   const nav = user.role === 'admin' ? ADMIN_NAV : OPERATOR_NAV
 
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    write('nexbus-theme', theme)
+  }, [theme])
+
+  const toggleSidebar = () => setCollapsed((c) => { write('nexbus-sidebar', c ? 'open' : 'closed'); return !c })
+
   return (
-    <div className="shell">
+    <div className={`shell${collapsed ? ' collapsed' : ''}`}>
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">🚌</div>
+          <img className="brand-logo" src="/logo.png" alt="" />
           <div className="brand-name">NexBus</div>
+          <button className="collapse-btn" onClick={toggleSidebar} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={collapsed ? 'Expand' : 'Collapse'}>
+            <ChevronLeftIcon size={16} />
+          </button>
         </div>
         <div className="nav-title">{user.role === 'admin' ? 'Administration' : 'Operations'}</div>
         {nav.map((item) => (
-          <NavLink key={item.to} to={item.to} end={item.end} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
-            <span className="nav-icon" aria-hidden="true">{item.icon}</span>
-            {item.label}
+          <NavLink key={item.to} to={item.to} end={item.end} title={item.label} className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}>
+            <item.Icon size={19} />
+            <span>{item.label}</span>
           </NavLink>
         ))}
         <div className="sidebar-foot">
-          <strong>{user.name}</strong>
-          <span>{user.role}</span>
-          <button onClick={logout}>Sign out</button>
+          <div className="user-chip">
+            <div className="avatar">{initials(user.name)}</div>
+            <div className="user-meta">
+              <strong>{user.name}</strong>
+              <span>{user.role}</span>
+            </div>
+          </div>
+          <div className="foot-actions">
+            <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} title={theme === 'dark' ? 'Light mode' : 'Dark mode'} aria-label="Toggle theme">
+              {theme === 'dark' ? <SunIcon size={16} /> : <MoonIcon size={16} />}
+            </button>
+            <button onClick={logout} title="Sign out"><LogoutIcon size={16} /><span>Sign out</span></button>
+          </div>
         </div>
       </aside>
       <main className="main">

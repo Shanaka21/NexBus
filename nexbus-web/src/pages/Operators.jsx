@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { api } from '../api'
 import { dateTime } from '../format'
-import { Badge, Button, Card, ErrorBox, Field, Modal, PageHeader, Spinner, Table, useLoad, useToast } from '../ui'
+import { Badge, Button, Card, ErrorBox, Field, Modal, PageHeader, SearchInput, Spinner, Table, matches, useLoad, useToast } from '../ui'
 
 function OperatorForm({ onClose, onSaved }) {
   const toast = useToast()
@@ -50,16 +50,18 @@ function OperatorForm({ onClose, onSaved }) {
 export default function Operators() {
   const { data, loading, error, reload } = useLoad(() => api('/admin/operators'))
   const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const rows = (data || []).filter((o) => matches(query, o.name, o.registration_no, o.contact_phone, o.email))
 
   if (loading && !data) return <Spinner />
   return (
     <>
       <PageHeader title="Operators" subtitle="Bus operating companies" actions={<Button onClick={() => setOpen(true)}>Register operator</Button>} />
       <ErrorBox error={error} onRetry={reload} />
-      <Card flush>
+      <Card title={`Companies (${rows.length})`} actions={<SearchInput value={query} onChange={setQuery} placeholder="Search companies" />} flush>
         <Table
           empty="No operators yet."
-          rows={data || []}
+          rows={rows}
           columns={[
             { key: 'name', title: 'Company', render: (o) => <strong>{o.name}</strong> },
             { key: 'reg', title: 'Registration', render: (o) => o.registration_no },

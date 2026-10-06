@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { api } from '../api'
 import { useAuth } from '../auth'
 import { dateTime, label } from '../format'
-import { Badge, Button, Card, ErrorBox, Field, Modal, PageHeader, Spinner, Table, useLoad, useToast } from '../ui'
+import { Badge, Button, Card, ErrorBox, Field, Modal, PageHeader, SearchInput, Spinner, Table, matches, useLoad, useToast } from '../ui'
 
 function UserForm({ operators, onClose, onSaved }) {
   const toast = useToast()
@@ -69,12 +69,15 @@ export default function Users() {
   const { user } = useAuth()
   const toast = useToast()
   const [role, setRole] = useState('')
+  const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const [busyId, setBusyId] = useState(null)
 
   const operators = useLoad(() => api('/admin/operators'))
   const users = useLoad(() => api(`/admin/users${role ? `?role=${role}` : ''}`), [role])
   const companyName = Object.fromEntries((operators.data || []).map((o) => [o.id, o.name]))
+
+  const visible = (users.data || []).filter((u) => matches(query, u.full_name, u.email, u.phone, companyName[u.operator_id]))
 
   const toggle = async (u) => {
     const disabling = u.status !== 'disabled'
@@ -96,22 +99,25 @@ export default function Users() {
       <PageHeader title="Users" subtitle="Control who can access NexBus" actions={<Button onClick={() => setOpen(true)}>New staff account</Button>} />
       <ErrorBox error={users.error} onRetry={users.reload} />
       <Card
-        title="Accounts"
+        title={`Accounts (${visible.length})`}
         actions={
-          <select className="input" value={role} onChange={(e) => setRole(e.target.value)} style={{ width: 'auto' }}>
+          <>
+            <SearchInput value={query} onChange={setQuery} placeholder="Search name or email" />
+            <select className="input" value={role} onChange={(e) => setRole(e.target.value)} style={{ width: 'auto' }}>
             <option value="">All roles</option>
             {['passenger', 'driver', 'operator', 'admin'].map((r) => <option key={r} value={r}>{label(r)}</option>)}
           </select>
+          </>
         }
         flush
       >
         {users.loading && !users.data ? <Spinner /> : (
           <Table
             empty="No accounts."
-            rows={users.data || []}
+            rows={visible}
             rowKey="uid"
             columns={[
-              { key: 'name', title: 'Name', render: (u) => <strong>{u.full_name}</strong> },
+              { key: 'name', title: 'Name', render: (u) => <span className="person"><span className="avatar avatar-sm">{u.full_name.split(/s+/).filter(Boolean).slice(0, 2).map((p) => p[0].toUpperCase()).join('')}</span><strong>{u.full_name}</strong></span> },
               { key: 'email', title: 'Email', render: (u) => <>{u.email}<span className="cell-sub">{u.phone}</span></> },
               { key: 'role', title: 'Role', render: (u) => <Badge tone={u.role === 'admin' ? 'red' : u.role === 'operator' ? 'blue' : 'gray'}>{u.role}</Badge> },
               { key: 'company', title: 'Company', render: (u) => companyName[u.operator_id] || '-' },

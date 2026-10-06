@@ -1,14 +1,15 @@
 import { useEffect, useRef } from "react";
-import { View, Text, StyleSheet, Animated, StatusBar } from "react-native";
+import { View, Text, StyleSheet, Animated, StatusBar, Image, Easing, useWindowDimensions } from "react-native";
 import { Stack, useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import RouteLoader from "../components/route-loader";
 import { getUserId, getRole } from "../lib/userSession";
 
 export default function SplashScreen() {
   const progressAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const router = useRouter();
+  const { width } = useWindowDimensions();
 
   useEffect(() => {
     Animated.sequence([
@@ -19,7 +20,8 @@ export default function SplashScreen() {
       }),
       Animated.timing(progressAnim, {
         toValue: 1,
-        duration: 2000,
+        duration: 2600,
+        easing: Easing.inOut(Easing.cubic),
         useNativeDriver: false,
       }),
     ]).start(() => {
@@ -36,7 +38,7 @@ export default function SplashScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <StatusBar barStyle="light-content" backgroundColor="#1a3cff" />
       <Animated.View style={[styles.iconBox, { opacity: fadeAnim }]}>
-        <Ionicons name="bus" size={72} color="#fff" />
+        <Image source={require("../assets/images/logo.png")} style={styles.logo} />
       </Animated.View>
 
       <Animated.View style={{ opacity: fadeAnim }}>
@@ -45,20 +47,8 @@ export default function SplashScreen() {
       </Animated.View>
 
       <View style={styles.progressContainer}>
+        <RouteLoader progress={progressAnim} width={Math.min(width - 48, 360)} />
         <Text style={styles.initText}>INITIALIZING SYSTEM...</Text>
-        <View style={styles.progressBar}>
-          <Animated.View
-            style={[
-              styles.progressFill,
-              {
-                width: progressAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: ["0%", "100%"],
-                }),
-              },
-            ]}
-          />
-        </View>
       </View>
 
       <View style={styles.footer}>
@@ -89,6 +79,7 @@ const styles = StyleSheet.create({
   iconBox: {
     marginBottom: 24,
   },
+  logo: { width: 140, height: 140, borderRadius: 34 },
   title: {
     fontSize: 36,
     fontWeight: "bold",
@@ -100,7 +91,7 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.75)",
     textAlign: "center",
     marginTop: 8,
-    marginBottom: 48,
+    marginBottom: 36,
   },
   progressContainer: {
     width: "100%",
@@ -111,19 +102,7 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "rgba(255,255,255,0.9)",
     letterSpacing: 1.5,
-    marginBottom: 10,
-  },
-  progressBar: {
-    width: "100%",
-    height: 6,
-    backgroundColor: "rgba(255,255,255,0.2)",
-    borderRadius: 3,
-    overflow: "hidden",
-  },
-  progressFill: {
-    height: "100%",
-    backgroundColor: "#fff",
-    borderRadius: 3,
+    marginTop: 14,
   },
   footer: {
     position: "absolute",

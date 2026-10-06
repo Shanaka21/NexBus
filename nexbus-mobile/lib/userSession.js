@@ -1,6 +1,7 @@
 let userId = null;
 let userName = null;
 let userEmail = null;
+let photoUrl = null;
 let role = null;
 let operatorId = null;
 let idToken = null;
@@ -14,6 +15,7 @@ export const setUserSession = (uid, name, email, extra = {}) => {
   userId = uid;
   userName = name;
   userEmail = email;
+  photoUrl = null;
   role = extra.role || "passenger";
   operatorId = extra.operatorId || null;
   if (extra.idToken) idToken = extra.idToken;
@@ -29,6 +31,7 @@ export const clearSession = () => {
   userId = null;
   userName = null;
   userEmail = null;
+  photoUrl = null;
   role = null;
   operatorId = null;
   idToken = null;
@@ -38,10 +41,12 @@ export const clearSession = () => {
 
 export const setUserId   = (uid)  => { userId    = uid;   };
 export const setUserName = (name) => { userName  = name;  };
+export const setUserPhoto = (url)  => { photoUrl  = url || null; };
 
 export const getUserId       = () => userId;
 export const getUserName     = () => userName;
 export const getUserEmail    = () => userEmail;
+export const getUserPhoto    = () => photoUrl;
 export const getRole         = () => role;
 export const getOperatorId   = () => operatorId;
 export const getIdToken      = () => idToken;

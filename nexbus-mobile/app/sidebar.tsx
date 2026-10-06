@@ -6,11 +6,9 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { getUserName, getUserEmail, clearSession } from "../lib/userSession";
+import { getUserName, getUserEmail, getUserPhoto, clearSession } from "../lib/userSession";
 import { useTheme } from "../lib/themeContext";
 
-const AVATAR_KEY = "nexbus_avatar_uri";
 
 const light = {
   bg:        "#f0f0f5",
@@ -39,11 +37,11 @@ export default function SidebarScreen() {
   const email    = getUserEmail() || "Not logged in";
   const initials = name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2) || "U";
 
-  const [avatarUri, setAvatarUri] = useState<string | null>(null);
+  const [avatarUri, setAvatarUri] = useState<string | null>(getUserPhoto());
 
   useFocusEffect(
     useCallback(() => {
-      AsyncStorage.getItem(AVATAR_KEY).then((uri) => { setAvatarUri(uri); });
+      setAvatarUri(getUserPhoto());
     }, [])
   );
 

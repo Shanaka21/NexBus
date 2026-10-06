@@ -1,3 +1,4 @@
+import { AlertIcon, CheckIcon, CloseIcon, InboxIcon, SearchIcon } from './icons'
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react'
 
 export function Modal({ title, onClose, children, footer, width = 520 }) {
@@ -12,7 +13,7 @@ export function Modal({ title, onClose, children, footer, width = 520 }) {
       <div className="modal" style={{ maxWidth: width }} role="dialog" aria-modal="true" aria-label={title} onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h3>{title}</h3>
-          <button className="icon-btn" onClick={onClose} aria-label="Close">✕</button>
+          <button className="icon-btn" onClick={onClose} aria-label="Close"><CloseIcon size={16} /></button>
         </div>
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-foot">{footer}</div>}
@@ -45,12 +46,28 @@ export function Button({ variant = 'primary', busy, className = '', children, ..
   )
 }
 
+export function SearchInput({ value, onChange, placeholder = 'Search…' }) {
+  return (
+    <div className="search">
+      <SearchIcon size={16} />
+      <input className="input" type="search" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} aria-label={placeholder} />
+    </div>
+  )
+}
+
+// case-insensitive match of the query against any of the given text fields
+// eslint-disable-next-line react-refresh/only-export-components
+export const matches = (query, ...fields) => {
+  const q = query.trim().toLowerCase()
+  return !q || fields.some((f) => String(f ?? '').toLowerCase().includes(q))
+}
+
 export function Spinner() {
   return <div className="center-pad"><span className="spinner" /></div>
 }
 
 export function Empty({ children }) {
-  return <div className="empty">{children}</div>
+  return <div className="empty"><span className="empty-icon"><InboxIcon size={26} /></span>{children}</div>
 }
 
 export function PageHeader({ title, subtitle, actions }) {
@@ -101,7 +118,7 @@ export function ToastProvider({ children }) {
     <ToastContext.Provider value={push}>
       {children}
       <div className="toasts" aria-live="polite">
-        {items.map((t) => <div key={t.id} className={`toast toast-${t.tone}`}>{t.message}</div>)}
+        {items.map((t) => <div key={t.id} className={`toast toast-${t.tone}`}>{t.tone === 'error' ? <AlertIcon size={18} /> : <CheckIcon size={18} />}<span>{t.message}</span></div>)}
       </div>
     </ToastContext.Provider>
   )

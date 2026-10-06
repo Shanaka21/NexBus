@@ -7,4 +7,5 @@ const make = (limit) => rateLimit({ windowMs: 60 * 1000, limit, standardHeaders:
 
 // general limit for every request; stricter limit for sign-in, registration, booking and checkout
 // chat: the assistant calls a paid-per-use language model, so it gets its own, more generous bucket than strict
-module.exports = { general: make(300), strict: make(20), chat: make(30) };
+// upload: images go to an external storage service, so keep it tight
+module.exports = { general: make(300), strict: make(20), chat: make(30), upload: make(10) };

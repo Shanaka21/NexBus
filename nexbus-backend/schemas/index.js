@@ -177,6 +177,9 @@ exports.adminUser = Joi.object({
   operator_id: id.when('role', { is: 'operator', then: Joi.required(), otherwise: Joi.forbidden() })
 });
 
+// base64 (or a data: URL) of a JPEG, PNG or WebP image; the size and type are checked by the upload service
+exports.imageUpload = Joi.object({ image: Joi.string().max(6 * 1024 * 1024).required() });
+
 exports.userStatus = Joi.object({ status: Joi.string().valid('active', 'disabled').required() });
 exports.usersQuery = Joi.object({ role: Joi.string().valid('passenger', 'driver', 'operator', 'admin') });
 exports.logsQuery = Joi.object({

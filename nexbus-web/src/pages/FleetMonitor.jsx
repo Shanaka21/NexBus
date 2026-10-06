@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { CloseIcon } from '../icons'
 import { api } from '../api'
 import { useAuth } from '../auth'
 import { useFleet, POLL_MS } from '../useFleet'
@@ -56,7 +57,7 @@ export default function FleetMonitor() {
           {selected && (
             <Card
               title={`${selected.registration_no} · Route ${selected.route_number}`}
-              actions={<button className="icon-btn" onClick={() => setSelectedId(null)} aria-label="Close">✕</button>}
+              actions={<button className="icon-btn" onClick={() => setSelectedId(null)} aria-label="Close"><CloseIcon size={16} /></button>}
             >
               <p><Badge tone={LIVE[selected.live].tone}>{LIVE[selected.live].label}</Badge></p>
               <p className="muted" style={{ marginTop: 10 }}>

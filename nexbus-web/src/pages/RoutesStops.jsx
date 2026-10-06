@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { CloseIcon } from '../icons'
 import { api } from '../api'
 import { useAuth } from '../auth'
 import { SERVICE_TYPES, COLOMBO, haversineKm, lkr, label } from '../format'
@@ -145,7 +146,7 @@ function RouteForm({ route, stops, onClose, onSaved }) {
               <span className="grow">{s.name}{s.nameSi ? ` · ${s.nameSi}` : ''}</span>
               <button className="icon-btn" onClick={() => move(i, -1)} disabled={i === 0} aria-label="Move up">↑</button>
               <button className="icon-btn" onClick={() => move(i, 1)} disabled={i === ordered.length - 1} aria-label="Move down">↓</button>
-              <button className="icon-btn" onClick={() => setStopIds(stopIds.filter((id) => id !== s.stopId))} aria-label="Remove stop">✕</button>
+              <button className="icon-btn" onClick={() => setStopIds(stopIds.filter((id) => id !== s.stopId))} aria-label="Remove stop"><CloseIcon size={14} /></button>
             </div>
           ))}
         </div>

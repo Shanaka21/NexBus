@@ -20,6 +20,7 @@ Other scripts: `npm test` (runs against the same Postgres database, truncating t
 | `GOOGLE_CLIENT_ID` | OAuth client id(s) (comma separated) accepted when verifying Google sign-in id tokens from the mobile app |
 | `NVIDIA_API_KEY`, `NVIDIA_MODEL` | Key (and optional model, default `openai/gpt-oss-20b`) for the Plan Trip assistant. Server side only |
 | `GOOGLE_MAPS_API_KEY` | Optional. Lets the assistant geocode places that are not bus stops with Google; falls back to OpenStreetMap when unset or refused (Google needs billing enabled) |
+| `UPLOADTHING_TOKEN` | UploadThing token for profile photos and image uploads. Server side only: the apps send images to the API, never to UploadThing directly |
 | `DASHBOARD_ORIGIN` | Allowed browser origin(s) for the dashboard, comma separated. Open when empty (development) |
 | `PAYHERE_MERCHANT_ID`, `PAYHERE_MERCHANT_SECRET`, `PAYHERE_SANDBOX` | PayHere credentials. The secret never leaves the server |
 | `PAYHERE_SIMULATE` | `true` enables `POST /payments/simulate`, which completes a payment without a public notify URL. Keep `false` in production |
@@ -45,7 +46,9 @@ Roles: `passenger`, `driver`, `operator` (one company), `admin`. The role is emb
 | POST `/auth/forgot-password` | public | Request a password reset link (logged to the server console) |
 | POST `/auth/reset-password` | public | Set a new password from a reset token |
 | POST `/auth/google` | public | Sign in with a verified Google id token (mobile) |
-| GET, PATCH `/users/me` | all | Own profile (name, phone, language, push token) |
+| GET, PATCH `/users/me` | all | Own profile (name, phone, language, push token, `photo_url`) |
+| PUT, DELETE `/users/me/photo` | all | Set (body `{ "image": "<base64 or data URL>" }`, JPEG/PNG/WebP up to 4 MB) or remove the profile photo; the old file is deleted from UploadThing |
+| POST `/uploads/image` | all | Upload an image (same body) and get `{ url, key }`; 10 requests per minute |
 | GET `/routes`, `/routes/:id` | all | Routes with ordered stops |
 | POST `/routes`, PUT `/routes/:id` | operator, admin | Create or update a route (distances are calculated from the stops) |
 | DELETE `/routes/:id` | admin | Deactivate a route |

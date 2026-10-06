@@ -8,6 +8,7 @@ import {
   StatusBar,
   Alert,
   ScrollView,
+  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter } from "expo-router";
@@ -100,9 +101,7 @@ export default function SignupScreen() {
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={p.bg} />
 
       <View style={styles.header}>
-        <LinearGradient colors={["#4f86f7", "#1a3cff", "#0d1b6e"]} style={styles.iconBox}>
-          <Ionicons name="bus" size={32} color="#fff" />
-        </LinearGradient>
+        <Image source={require("../assets/images/logo.png")} style={styles.logo} />
         <Text style={styles.appTitle}>NexBus</Text>
       </View>
 
@@ -213,7 +212,7 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   header:   { alignItems: "center", marginBottom: 24 },
-  iconBox:  { width: 64, height: 64, borderRadius: 18, alignItems: "center", justifyContent: "center", marginBottom: 10 },
+  logo:     { width: 88, height: 88, borderRadius: 22, marginBottom: 10 },
   appTitle: { fontSize: 26, fontWeight: "bold", color: "#1a3cff" },
 
   card:        { width: "100%", borderRadius: 20, padding: 24 },

@@ -9,7 +9,10 @@ const app = express();
 app.set('trust proxy', 1); // behind Cloud Run / a reverse proxy
 app.use(helmet());
 app.use(cors({ origin: process.env.DASHBOARD_ORIGIN ? process.env.DASHBOARD_ORIGIN.split(',') : true }));
-app.use(express.json({ limit: '50kb' }));
+// image uploads are base64 JSON with their own, larger limit (see middleware/imageBody.js), parsed after sign-in and rate limiting
+const IMAGE_ROUTE = /^(\/api)?\/(uploads\/|users\/me\/photo)/;
+const smallJson = express.json({ limit: '50kb' });
+app.use((req, res, next) => (IMAGE_ROUTE.test(req.path) ? next() : smallJson(req, res, next)));
 app.use(general);
 
 app.get('/', (req, res) => {
@@ -20,6 +23,7 @@ app.get('/', (req, res) => {
 const api = express.Router();
 api.use('/auth', require('./routes/auth'));
 api.use('/users', require('./routes/users'));
+api.use('/uploads', require('./routes/uploads'));
 api.use('/routes', require('./routes/routes'));
 api.use('/stops', require('./routes/stops'));
 api.use('/buses', require('./routes/buses'));
