@@ -22,6 +22,8 @@ const STOPS = [
   ['battaramulla', 'Battaramulla', 'බත්තරමුල්ල', 6.9007, 79.9187],
   ['malabe', 'Malabe', 'මාලබේ', 6.9047, 79.9578],
   ['kaduwela', 'Kaduwela', 'කඩුවෙල', 6.9333, 79.9858],
+  ['weliweriya', 'Weliweriya', 'වැලිවේරිය', 7.0323, 80.0283],
+  ['yakkala', 'Yakkala', 'යක්කල', 7.0859, 80.0336],
   ['narahenpita', 'Narahenpita', 'නාරාහේන්පිට', 6.8960, 79.8777],
   ['nugegoda', 'Nugegoda', 'නුගේගොඩ', 6.8649, 79.8997],
   ['maharagama', 'Maharagama', 'මහරගම', 6.8480, 79.9265],
@@ -49,7 +51,7 @@ const ROUTES = [
   { id: 'r143', number: '143', type: 'normal', fare: 75, minutes: 65, stops: ['kaduwela', 'malabe', 'battaramulla', 'rajagiriya', 'borella', 'maradana', 'pettah'] },
   { id: 'r190', number: '190', type: 'normal', fare: 100, minutes: 100, stops: ['meegoda', 'homagama', 'kottawa', 'maharagama', 'nugegoda', 'narahenpita', 'borella', 'maradana', 'pettah'] },
   { id: 'r505', number: '505', type: 'normal', fare: 50, minutes: 30, stops: ['alawwa', 'giriulla'] },
-  { id: 'r017', number: '17', type: 'semi_luxury', fare: 520, minutes: 330, stops: ['panadura', 'moratuwa', 'mount_lavinia', 'dehiwala', 'fort', 'pettah', 'kadawatha', 'nittambuwa', 'warakapola', 'kegalle', 'peradeniya', 'kandy'] },
+  { id: 'r017', number: '17', type: 'semi_luxury', fare: 520, minutes: 330, stops: ['panadura', 'moratuwa', 'mount_lavinia', 'dehiwala', 'nugegoda', 'rajagiriya', 'battaramulla', 'malabe', 'kaduwela', 'weliweriya', 'yakkala', 'nittambuwa', 'warakapola', 'kegalle', 'peradeniya', 'kandy'] },
   { id: 'r005', number: '05', type: 'semi_luxury', fare: 350, minutes: 200, stops: ['fort', 'pettah', 'kadawatha', 'nittambuwa', 'warakapola', 'alawwa', 'polgahawela', 'kurunegala'] }
 ];
 
@@ -158,6 +160,13 @@ async function seed() {
       await pool.query('INSERT INTO route_stops (route_id, stop_id, sequence_no, distance_from_origin_km) VALUES ($1,$2,$3,$4)', [r.id, s.stop_id, s.sequence_no, s.distance_from_origin_km]);
     }
   }
+  await pool.query(
+    `DELETE FROM bus_stops WHERE id <> ALL($1)
+       AND id NOT IN (SELECT stop_id FROM route_stops)
+       AND id NOT IN (SELECT boarding_stop_id FROM bookings WHERE boarding_stop_id IS NOT NULL)
+       AND id NOT IN (SELECT alighting_stop_id FROM bookings WHERE alighting_stop_id IS NOT NULL)`,
+    [STOPS.map((x) => x[0])]
+  );
   console.log(`  ✓ ${ROUTES.length} routes`);
 
   console.log('Seeding vehicles...');

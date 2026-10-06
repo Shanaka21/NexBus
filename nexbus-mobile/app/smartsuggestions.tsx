@@ -90,7 +90,7 @@ export default function SmartSuggestionsScreen() {
       } else {
         setOptions([]);
         setExplanation(null);
-        setMessage(found.length ? null : live.status === 404 ? "No bus route connects these stops, even with one change. Try a nearby stop." : live.data?.error || "Could not get suggestions.");
+        setMessage(found.length ? null : live.status === 404 ? "No bus route connects these stops, even with two changes. Try a nearby stop." : live.data?.error || "Could not get suggestions.");
       }
     } catch {
       setMessage("Could not connect to the server.");
@@ -217,7 +217,7 @@ export default function SmartSuggestionsScreen() {
           <>
             <View style={styles.sectionRow}>
               <Text style={styles.sectionTitle}>{plans[0].type === "direct" ? "Bus to take" : "Buses to take"}</Text>
-              {plans[0].type === "change" && <View style={styles.fastestBadge}><Text style={styles.fastestText}>NO DIRECT BUS</Text></View>}
+              {plans[0].type === "change" && <View style={styles.fastestBadge}><Text style={styles.fastestText}>{plans[0].legs.length > 2 ? `${plans[0].legs.length} BUSES NEEDED` : "NO DIRECT BUS"}</Text></View>}
             </View>
             {plans.map((p, i) => {
               const first = p.legs[0];
@@ -227,7 +227,7 @@ export default function SmartSuggestionsScreen() {
                   <View style={styles.planHead}>
                     <View style={[styles.metaChip, { backgroundColor: p.type === "direct" ? "#e8f5e9" : "#fff3e0" }]}>
                       <Text style={[styles.metaChipText, { fontWeight: "700", color: p.type === "direct" ? "#2e7d32" : "#a96400" }]}>
-                        {p.type === "direct" ? "DIRECT" : "1 CHANGE"}
+                        {p.type === "direct" ? "DIRECT" : p.legs.length === 2 ? "1 CHANGE" : `${p.legs.length - 1} CHANGES`}
                       </Text>
                     </View>
                     <Text style={styles.planSummary}>about {hours(p.score)} · {lkr(totalFare(p))}</Text>
@@ -244,7 +244,7 @@ export default function SmartSuggestionsScreen() {
                       <View style={styles.legCard}>
                         <View style={styles.altBadge}><Text style={styles.altBadgeText}>{l.route_number}</Text></View>
                         <View style={{ flex: 1 }}>
-                          <Text style={styles.legTitle}>Take bus {l.route_number}</Text>
+                          <Text style={styles.legTitle}>{li === 0 ? "Take" : "Then take"} bus {l.route_number}</Text>
                           <Text style={styles.legRoute}>{l.from_name} → {l.to_name}</Text>
                           <Text style={styles.legMeta}>
                             {l.stop_count} stop{l.stop_count === 1 ? "" : "s"} · {l.km} km {legTime(l) ? `· ${legTime(l)}` : ""}

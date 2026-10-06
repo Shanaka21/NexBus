@@ -39,7 +39,45 @@ function leg(route, stops, a, b) {
 
 const rideMinutes = (l) => (l.minutes ?? Math.round(l.km * 2.5)) + (l.direction === 'reverse' ? REVERSE_PENALTY_MIN : 0);
 
-// Pure planner: direct routes and one-change journeys, best first
+// Journeys with three buses (two changes), for when no single bus and no single change connects two stops.
+// Changes only happen at stops that two or more routes serve, which keeps the search small.
+function threeBusPlans(routes, stops, fromId, toId) {
+  const index = (route, stopId) => route.stops.findIndex((s) => s.stop_id === stopId);
+  const routesAt = new Map();
+  for (const r of routes) {
+    for (const s of r.stops) {
+      if (!routesAt.has(s.stop_id)) routesAt.set(s.stop_id, []);
+      routesAt.get(s.stop_id).push(r);
+    }
+  }
+  const isHub = (stopId) => (routesAt.get(stopId) || []).length >= 2;
+
+  const plans = [];
+  for (const r1 of routesAt.get(fromId) || []) {
+    const a = index(r1, fromId);
+    for (const [x, s1] of r1.stops.entries()) {
+      if (x === a || s1.stop_id === toId || !isHub(s1.stop_id)) continue;
+      for (const r2 of routesAt.get(s1.stop_id)) {
+        if (r2.id === r1.id) continue;
+        const y = index(r2, s1.stop_id);
+        for (const [z, s2] of r2.stops.entries()) {
+          if (z === y || !isHub(s2.stop_id) || [fromId, toId, s1.stop_id].includes(s2.stop_id)) continue;
+          for (const r3 of routesAt.get(s2.stop_id)) {
+            if (r3.id === r1.id || r3.id === r2.id) continue;
+            const w = index(r3, s2.stop_id);
+            const b = index(r3, toId);
+            if (b < 0 || b === w) continue;
+            const legs = [leg(r1, stops, a, x), leg(r2, stops, y, z), leg(r3, stops, w, b)];
+            plans.push({ type: 'change', legs, score: legs.reduce((sum, l) => sum + rideMinutes(l), 0) + 2 * CHANGE_WAIT_MIN });
+          }
+        }
+      }
+    }
+  }
+  return plans;
+}
+
+// Pure planner: direct routes and one-change journeys, best first; two changes only when nothing simpler exists
 function buildPlans(routes, stops, fromId, toId) {
   const index = (route, stopId) => route.stops.findIndex((s) => s.stop_id === stopId);
   const plans = [];
@@ -70,6 +108,8 @@ function buildPlans(routes, stops, fromId, toId) {
       }
     }
   }
+
+  if (!plans.length) plans.push(...threeBusPlans(routes, stops, fromId, toId));
 
   // keep the cheapest plan per route combination and change stop, then the best few overall
   const seen = new Set();

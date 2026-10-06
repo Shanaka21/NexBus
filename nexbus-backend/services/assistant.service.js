@@ -128,7 +128,7 @@ async function ask({ query, history = [], lat, lng }, now = Date.now()) {
 
   const plans = await journey.plan(from.id, to.id, now);
   if (!plans.length) {
-    return { ...base, answer: withNotes(`I could not find a bus route from ${from.name} to ${to.name}, even with one change. Try a nearby stop.`) };
+    return { ...base, answer: withNotes(`I could not find a bus route from ${from.name} to ${to.name}, even with two changes. Try a nearby stop.`) };
   }
 
   // Live buses on the direct routes. When there is one, the answer is built around that bus's route.
@@ -148,14 +148,18 @@ async function ask({ query, history = [], lat, lng }, now = Date.now()) {
 
   const when = (t) => (colomboDate(t) === colomboDate(now) ? clock(t) : `tomorrow ${clock(t)}`);
   const lines = [];
-  const [first, second] = best.legs;
+  const [first] = best.legs;
   if (best.type === 'direct') {
     lines.push(`${first.direction === 'forward' ? 'Take' : 'This way is served by'} bus ${first.route_number} (${first.route_name}).`);
     lines.push(`Board at ${first.from_name}, get off at ${first.to_name}: ${rideSummary(first)}`);
   } else {
-    lines.push(`There is no direct bus from ${from.name} to ${to.name}, but you can go with one change:`);
-    lines.push(`1) Take bus ${first.route_number} from ${first.from_name} to ${first.to_name}: ${rideSummary(first)}`);
-    lines.push(`2) Change to bus ${second.route_number} and get off at ${second.to_name}: ${rideSummary(second)}`);
+    const changes = best.legs.length - 1;
+    lines.push(`There is no direct bus from ${from.name} to ${to.name}, but you can go with ${changes === 1 ? 'one change' : `${changes} changes (${best.legs.length} buses)`}:`);
+    best.legs.forEach((l, i) => {
+      lines.push(i === 0
+        ? `1) Take bus ${l.route_number} from ${l.from_name} to ${l.to_name}: ${rideSummary(l)}`
+        : `${i + 1}) Change to bus ${l.route_number} and get off at ${l.to_name}: ${rideSummary(l)}`);
+    });
   }
 
   if (live) {
