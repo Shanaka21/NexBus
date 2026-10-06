@@ -1,13 +1,12 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useState } from "react";
 import { View, Text, StyleSheet, Animated, StatusBar, Image, Easing, useWindowDimensions } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import RouteLoader from "../components/route-loader";
 import { getUserId, getRole } from "../lib/userSession";
 
 export default function SplashScreen() {
-  const progressAnim = useRef(new Animated.Value(0)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const [progressAnim] = useState(() => new Animated.Value(0));
+  const [fadeAnim] = useState(() => new Animated.Value(0));
   const router = useRouter();
   const { width } = useWindowDimensions();
 
@@ -46,12 +45,19 @@ export default function SplashScreen() {
       </Animated.View>
 
       <View style={styles.progressContainer}>
-        <RouteLoader progress={progressAnim} width={Math.min(width - 48, 360)} />
+        <View style={[styles.track, { width: Math.min(width - 80, 320) }]}>
+          <Animated.View
+            style={[
+              styles.fill,
+              { width: progressAnim.interpolate({ inputRange: [0, 1], outputRange: ["0%", "100%"] }) },
+            ]}
+          />
+        </View>
         <Text style={styles.initText}>INITIALIZING SYSTEM...</Text>
       </View>
 
       <View style={styles.footer}>
-        <Text style={styles.footerText}>📍 LIVE TRANSIT DATA</Text>
+        <Text style={styles.footerText}>© 2026 NEXBUS SYSTEMS INC.</Text>
       </View>
     </LinearGradient>
   );
@@ -89,6 +95,17 @@ const styles = StyleSheet.create({
   progressContainer: {
     width: "100%",
     alignItems: "center",
+  },
+  track: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    overflow: "hidden",
+  },
+  fill: {
+    height: "100%",
+    borderRadius: 3,
+    backgroundColor: "#fff",
   },
   initText: {
     fontSize: 12,
