@@ -24,7 +24,7 @@ Other scripts: `npm test` (runs against the same Postgres database, truncating t
 | `API_BASE_URL` | Public HTTPS address of this API. PayHere posts to `API_BASE_URL/payments/notify` |
 | `INTERNAL_JOB_TOKEN` | Shared secret for Cloud Scheduler calls to `/internal/*` |
 | `ENABLE_JOBS` | `false` on Cloud Run: use Cloud Scheduler instead of the built-in timers |
-| `LIVE_CACHE_TTL_MS` | How long live results are shared between clients (default 15000) |
+| `LIVE_CACHE_TTL_MS` | How long live results are shared between clients (default 5000) |
 
 ## Authentication and roles
 
@@ -60,7 +60,7 @@ Roles: `passenger`, `driver`, `operator` (one company), `admin`. The role is emb
 | GET `/trips/:id/seats` | all | Seat map: `reservable_seats` and which seat numbers are taken |
 | GET `/trips/:id/summary` | driver, operator, admin | Distance/duration/passengers from recorded GPS fixes |
 | PATCH `/trips/:id/status` | driver, operator | Start, complete or cancel a trip |
-| POST `/location` | driver | One GPS fix of a running trip (sent every 10 s) |
+| POST `/location` | driver | One GPS fix of a running trip (sent every 3 s) |
 | POST `/bookings` | passenger | Book 1 to 4 specific seats (`seat_numbers`, 1..`reservable_seats`), held for 10 minutes |
 | GET `/bookings/me` | passenger | Own bookings |
 | GET `/bookings/:id` | passenger, operator | One booking |

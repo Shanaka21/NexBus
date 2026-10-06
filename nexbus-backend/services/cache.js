@@ -1,9 +1,9 @@
 // Tiny in-memory cache with in-flight de-duplication.
-// Many clients poll the same live data; one Firestore read serves all of them for a few seconds,
-// which keeps the pilot inside the free Firestore quota.
+// Many clients poll the same live data; one database read serves all of them for a few seconds.
+// Kept close to the driver's GPS interval so the live map does not lag far behind the bus.
 const store = new Map();
 
-const TTL_MS = Number(process.env.LIVE_CACHE_TTL_MS || 15000);
+const TTL_MS = Number(process.env.LIVE_CACHE_TTL_MS || 5000);
 
 async function cached(key, fn, ttlMs = TTL_MS) {
   const hit = store.get(key);
