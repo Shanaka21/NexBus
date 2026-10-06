@@ -3,10 +3,10 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   StatusBar, Modal, FlatList, SafeAreaView, Switch, ActivityIndicator, TextInput,
 } from "react-native";
-import * as Location from "expo-location";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter, useLocalSearchParams } from "expo-router";
 import { apiJson, jsonBody } from "../lib/api";
+import { currentPosition } from "../lib/position";
 import { stopLabel, lkr, clockTime, LIVE_STATUS } from "../lib/format";
 
 type Stop = { id: string; name: string; name_si?: string };
@@ -16,18 +16,6 @@ type Option = {
   reservable_seats: number; available_seats: number; fare_lkr: number; status: string; score: number;
   alight_eta_min: number | null;
 };
-
-// Last known position, only when the passenger allows it: lets "I want to go to X" work without naming an origin
-async function currentPosition(): Promise<{ lat: number; lng: number } | null> {
-  try {
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== "granted") return null;
-    const loc = await Location.getLastKnownPositionAsync();
-    return loc ? { lat: loc.coords.latitude, lng: loc.coords.longitude } : null;
-  } catch {
-    return null;
-  }
-}
 
 // Plan Trip: ranked options from live ETA, delay and seat availability, with a plain-language reason
 export default function SmartSuggestionsScreen() {

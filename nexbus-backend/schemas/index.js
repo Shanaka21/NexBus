@@ -137,7 +137,12 @@ exports.recommendations = Joi.object({
 });
 
 exports.ask = Joi.object({
-  query: Joi.string().trim().min(2).max(300).required(),
+  query: Joi.string().trim().min(1).max(300).required(),
+  // the last few chat turns, so follow-ups like "and a seat please" make sense
+  history: Joi.array().items(Joi.object({
+    role: Joi.string().valid('user', 'assistant').required(),
+    text: Joi.string().trim().min(1).max(600).required()
+  })).max(8),
   lat: Joi.number().min(5.9).max(9.9),
   lng: Joi.number().min(79.5).max(81.9)
 }).and('lat', 'lng');

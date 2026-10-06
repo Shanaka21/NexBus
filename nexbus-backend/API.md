@@ -19,6 +19,7 @@ Other scripts: `npm test` (runs against the same Postgres database, truncating t
 | `APP_URL` | Public URL of the web dashboard; used to build the (currently console-logged) password reset link |
 | `GOOGLE_CLIENT_ID` | OAuth client id(s) (comma separated) accepted when verifying Google sign-in id tokens from the mobile app |
 | `NVIDIA_API_KEY`, `NVIDIA_MODEL` | Key (and optional model, default `openai/gpt-oss-20b`) for the Plan Trip assistant. Server side only |
+| `GOOGLE_MAPS_API_KEY` | Optional. Lets the assistant geocode places that are not bus stops with Google; falls back to OpenStreetMap when unset or refused (Google needs billing enabled) |
 | `DASHBOARD_ORIGIN` | Allowed browser origin(s) for the dashboard, comma separated. Open when empty (development) |
 | `PAYHERE_MERCHANT_ID`, `PAYHERE_MERCHANT_SECRET`, `PAYHERE_SANDBOX` | PayHere credentials. The secret never leaves the server |
 | `PAYHERE_SIMULATE` | `true` enables `POST /payments/simulate`, which completes a payment without a public notify URL. Keep `false` in production |
@@ -70,7 +71,7 @@ Roles: `passenger`, `driver`, `operator` (one company), `admin`. The role is emb
 | POST `/payments/notify` | PayHere | Signed server notification (md5sig, merchant, amount, currency verified) |
 | POST `/payments/simulate` | passenger | Sandbox only, see `PAYHERE_SIMULATE` |
 | GET `/recommendations` | passenger | Ranked options (`from_stop_id`, `to_stop_id`, `need_seat`) |
-| POST `/recommendations/ask` | passenger | Free-text trip question (`query`, optional `lat`/`lng`): a language model picks the stops, then the same ranking runs |
+| POST `/recommendations/ask` | passenger | Chat with the assistant (`query`, optional `history` of earlier turns and `lat`/`lng`). `type` is `trip` (live bus answer: a language model picks the stops (places that are not stops are geocoded and matched to the nearest stop within 8 km), then the same ranking runs) or `chat` (an ordinary reply) |
 | GET `/notifications/me`, PATCH `/notifications/:id/read`, `/notifications/read-all` | all | In-app notifications |
 | GET `/operator/drivers`, POST `/operator/drivers` | operator | Driver accounts of the company |
 | GET `/operator/bookings` (`?date=&status=`) | operator | Bookings and payment status |

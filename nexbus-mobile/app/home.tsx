@@ -350,6 +350,27 @@ export default function HomeScreen() {
             </LinearGradient>
           </TouchableOpacity>
 
+          {/* ── Chat assistant ── */}
+          <TouchableOpacity
+            style={[styles.smartBanner, { backgroundColor: p.smartBanner, borderColor: p.smartBannerBorder }]}
+            onPress={() => router.push("/assistant" as any)}
+            activeOpacity={0.85}
+          >
+            <View style={styles.smartBannerLeft}>
+              <View style={[styles.smartBannerIcon, { backgroundColor: p.card }]}>
+                <Ionicons name="sparkles" size={20} color="#1a3cff" />
+              </View>
+              <View>
+                <Text style={[styles.smartBannerTitle, { color: p.text }]}>NexBus Assistant</Text>
+                <Text style={styles.smartBannerSub}>Chat, ask for a bus in English or Sinhala</Text>
+              </View>
+            </View>
+            <View style={styles.smartBannerArrow}>
+              <Text style={styles.smartBannerArrowText}>Chat</Text>
+              <Ionicons name="arrow-forward" size={14} color="#1a3cff" />
+            </View>
+          </TouchableOpacity>
+
           {/* ── Smart Suggestions Banner ── */}
           <TouchableOpacity
             style={[styles.smartBanner, { backgroundColor: p.smartBanner, borderColor: p.smartBannerBorder }]}
