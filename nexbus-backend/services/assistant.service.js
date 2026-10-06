@@ -1,7 +1,8 @@
 const { AppError } = require('../utils/errors');
-const { clock, lkr } = require('../utils/format');
+const { clock, lkr, colomboDate } = require('../utils/format');
 const stopService = require('./stop.service');
 const recommend = require('./recommend.service');
+const journey = require('./journey.service');
 const { geocode } = require('./geocode.service');
 
 const NVIDIA_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
@@ -118,34 +119,78 @@ async function ask({ query, history = [], lat, lng }, now = Date.now()) {
       };
     }
   }
-  const base = { type: 'trip', from: from && describe(from), to: to && describe(to), need_seat: needSeat, options: [], explanation: null };
-  const withNotes = (text) => [...notes, text].join(' ');
+  const base = { type: 'trip', from: from && describe(from), to: to && describe(to), need_seat: needSeat, options: [], explanation: null, legs: [] };
+  const withNotes = (text) => [...notes, text].join('\n');
 
   if (!to) return { ...base, answer: withNotes('I could not find that destination among our bus stops. Please choose it from the list.') };
   if (!from) return { ...base, answer: withNotes(`Where are you travelling from? Choose your boarding stop to get buses to ${to.name}.`) };
   if (from.id === to.id) return { ...base, answer: withNotes(`You are already at ${to.name}.`) };
 
-  let ranked;
-  try {
-    ranked = await recommend.recommend({ from_stop_id: from.id, to_stop_id: to.id, need_seat: needSeat }, now);
-  } catch (err) {
-    if (err instanceof AppError && err.code === 'NO_ROUTE') {
-      return { ...base, answer: withNotes(`No single bus route goes from ${from.name} to ${to.name}. Try a nearby stop.`) };
-    }
-    throw err;
+  const plans = await journey.plan(from.id, to.id, now);
+  if (!plans.length) {
+    return { ...base, answer: withNotes(`I could not find a bus route from ${from.name} to ${to.name}, even with one change. Try a nearby stop.`) };
   }
 
-  const best = ranked.options[0];
-  if (!best) return { ...base, answer: withNotes(`No buses are running from ${from.name} to ${to.name} right now.`) };
+  // Live buses on the direct routes. When there is one, the answer is built around that bus's route.
+  let ranked = { options: [], explanation: null };
+  if (plans.some((p) => p.type === 'direct' && p.legs[0].direction === 'forward')) {
+    try {
+      ranked = await recommend.recommend({ from_stop_id: from.id, to_stop_id: to.id, need_seat: needSeat }, now);
+    } catch (err) {
+      if (!(err instanceof AppError && err.code === 'NO_ROUTE')) throw err;
+    }
+  }
+  const liveBest = ranked.options[0];
+  const best = (liveBest && plans.find((p) => p.type === 'direct' && p.legs[0].route_id === liveBest.route_id)) || plans[0];
+  // only the live buses of the route in the answer, so the text and the buttons never disagree
+  const liveOptions = best.type === 'direct' ? ranked.options.filter((o) => o.route_id === best.legs[0].route_id) : [];
+  const live = liveOptions[0];
 
-  let answer = `Take bus ${best.route_number} (${best.registration_no}) from ${from.name}. It reaches your stop in about ${best.eta_min} min (${clock(now + best.eta_min * 60000)}).`;
-  answer += best.alight_eta_min != null
-    ? ` Get off at ${to.name} at about ${clock(now + best.alight_eta_min * 60000)}.`
-    : ` Get off at ${to.name}.`;
-  answer += ` Fare ${lkr(best.fare_lkr)} per seat.`;
-  if (best.delay_minutes >= 10) answer += ` The bus is running ${best.delay_minutes} min late.`;
+  const when = (t) => (colomboDate(t) === colomboDate(now) ? clock(t) : `tomorrow ${clock(t)}`);
+  const lines = [];
+  const [first, second] = best.legs;
+  if (best.type === 'direct') {
+    lines.push(`${first.direction === 'forward' ? 'Take' : 'This way is served by'} bus ${first.route_number} (${first.route_name}).`);
+    lines.push(`Board at ${first.from_name}, get off at ${first.to_name}: ${rideSummary(first)}`);
+  } else {
+    lines.push(`There is no direct bus from ${from.name} to ${to.name}, but you can go with one change:`);
+    lines.push(`1) Take bus ${first.route_number} from ${first.from_name} to ${first.to_name}: ${rideSummary(first)}`);
+    lines.push(`2) Change to bus ${second.route_number} and get off at ${second.to_name}: ${rideSummary(second)}`);
+  }
 
-  return { ...base, options: ranked.options, explanation: ranked.explanation, answer: withNotes(answer) };
+  if (live) {
+    lines.push(`Live: bus ${live.registration_no} reaches ${from.name} in about ${live.eta_min} min (${clock(now + live.eta_min * 60000)})` +
+      (live.alight_eta_min != null ? ` and ${to.name} at about ${clock(now + live.alight_eta_min * 60000)}.` : '.'));
+    if (live.delay_minutes >= 10) lines.push(`That bus is running ${live.delay_minutes} min late.`);
+  } else if (first.direction === 'forward' && first.departures.length) {
+    lines.push(`No bus is running on route ${first.route_number} right now. Next departures from ${first.from_name}: ${first.departures.map(when).join(', ')}.`);
+  } else if (first.direction === 'forward') {
+    lines.push(`No bus is running on route ${first.route_number} right now and no more departures are scheduled.`);
+  }
+  for (const l of best.legs.filter((x) => x.direction === 'reverse')) {
+    lines.push(`Bus ${l.route_number} also runs from ${l.from_name} to ${l.to_name}, but the app has no timetable, live position or fare for that direction yet.`);
+  }
+
+  const priced = best.legs.filter((l) => l.direction === 'forward');
+  if (priced.length) {
+    lines.push(priced.length === 1 && best.legs.length === 1
+      ? `Fare: ${lkr(priced[0].fare_lkr)} per seat.`
+      : `Fare: ${priced.map((l) => `bus ${l.route_number} ${lkr(l.fare_lkr)}`).join(', ')} (each route has its own fare).`);
+  }
+
+  return {
+    ...base,
+    options: liveOptions,
+    explanation: live ? ranked.explanation : null,
+    legs: best.legs.map(({ route_id, route_number, from_stop_id, to_stop_id }) => ({ route_id, route_number, from_stop_id, to_stop_id })),
+    answer: withNotes(lines.join('\n'))
+  };
+}
+
+// "7 stops, 12.4 km, about 35 min, via Maradana, Borella, ..."
+function rideSummary(l) {
+  const via = l.via.length ? `, via ${l.via.slice(0, 5).join(', ')}${l.via.length > 5 ? ', ...' : ''}` : '';
+  return `${l.stop_count} stop${l.stop_count === 1 ? '' : 's'}, ${l.km} km${l.minutes ? `, about ${l.minutes} min` : ''}${via}.`;
 }
 
 module.exports = { ask };

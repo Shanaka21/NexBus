@@ -10,13 +10,14 @@ import { apiJson, jsonBody } from "../lib/api";
 import { currentPosition } from "../lib/position";
 import { useTheme } from "../lib/themeContext";
 
+type Leg = { from_stop_id: string; to_stop_id: string };
 type TripOption = { trip_id: string; route_id: string; boarding_stop_id: string; alighting_stop_id: string; reservable_seats: number };
 type Message = {
   id: number;
   role: "user" | "assistant";
   text: string;
   error?: boolean;
-  trip?: { from: string; to: string; needSeat: boolean; option: TripOption | null };
+  trip?: { from: string; to: string; needSeat: boolean; option: TripOption | null; firstLeg: Leg | null };
 };
 
 const WELCOME: Message = {
@@ -68,7 +69,7 @@ export default function AssistantScreen() {
           role: "assistant",
           text: data.answer,
           trip: data.type === "trip" && data.from && data.to
-            ? { from: data.from.id, to: data.to.id, needSeat: !!data.need_seat, option: data.options?.[0] ?? null }
+            ? { from: data.from.id, to: data.to.id, needSeat: !!data.need_seat, option: data.options?.[0] ?? null, firstLeg: data.legs?.[0] ?? null }
             : undefined,
         };
       }
@@ -80,8 +81,12 @@ export default function AssistantScreen() {
     scrollDown();
   };
 
+  // With a change of bus, the first ride is the one that can be looked at and booked now
   const seeBuses = (t: NonNullable<Message["trip"]>) =>
-    router.push({ pathname: "/smartsuggestions", params: { from: t.from, to: t.to, need_seat: t.needSeat ? "1" : "0" } } as any);
+    router.push({
+      pathname: "/smartsuggestions",
+      params: { from: t.firstLeg?.from_stop_id ?? t.from, to: t.firstLeg?.to_stop_id ?? t.to, need_seat: t.needSeat ? "1" : "0" },
+    } as any);
 
   const bookSeats = (t: NonNullable<Message["trip"]>) =>
     t.option && router.push({

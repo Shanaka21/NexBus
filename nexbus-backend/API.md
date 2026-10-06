@@ -71,7 +71,7 @@ Roles: `passenger`, `driver`, `operator` (one company), `admin`. The role is emb
 | POST `/payments/notify` | PayHere | Signed server notification (md5sig, merchant, amount, currency verified) |
 | POST `/payments/simulate` | passenger | Sandbox only, see `PAYHERE_SIMULATE` |
 | GET `/recommendations` | passenger | Ranked options (`from_stop_id`, `to_stop_id`, `need_seat`) |
-| POST `/recommendations/ask` | passenger | Chat with the assistant (`query`, optional `history` of earlier turns and `lat`/`lng`). `type` is `trip` (live bus answer: a language model picks the stops (places that are not stops are geocoded and matched to the nearest stop within 8 km), then the same ranking runs) or `chat` (an ordinary reply) |
+| POST `/recommendations/ask` | passenger | Chat with the assistant (`query`, optional `history` of earlier turns and `lat`/`lng`). `type` is `trip` (route guidance: how to get there, directly or with one change, plus live times and next departures; a language model picks the stops (places that are not stops are geocoded and matched to the nearest stop within 8 km), then the same ranking runs) or `chat` (an ordinary reply) |
 | GET `/notifications/me`, PATCH `/notifications/:id/read`, `/notifications/read-all` | all | In-app notifications |
 | GET `/operator/drivers`, POST `/operator/drivers` | operator | Driver accounts of the company |
 | GET `/operator/bookings` (`?date=&status=`) | operator | Bookings and payment status |
