@@ -7,6 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter, useLocalSearchParams } from "expo-router";
 import { apiJson, jsonBody } from "../lib/api";
 import { currentPosition } from "../lib/position";
+import JourneySteps, { AnswerLeg, legsFromAnswer } from "../components/journey-steps";
 import { stopLabel, lkr, clockTime, dayTime, LIVE_STATUS } from "../lib/format";
 
 type Stop = { id: string; name: string; name_si?: string };
@@ -44,6 +45,7 @@ export default function SmartSuggestionsScreen() {
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
   const [answer, setAnswer] = useState<string | null>(null);
+  const [answerLegs, setAnswerLegs] = useState<AnswerLeg[]>([]);
 
   // Free-text request: the server works out the two stops, then the normal search below shows the buses
   const ask = async () => {
@@ -51,11 +53,15 @@ export default function SmartSuggestionsScreen() {
     if (query.length < 2 || asking) return;
     setAsking(true);
     setAnswer(null);
+    setAnswerLegs([]);
     try {
       const position = await currentPosition();
       const { ok, data } = await apiJson("/recommendations/ask", { method: "POST", ...jsonBody({ query, ...(position || {}) }) });
       if (!ok) { setAnswer(data?.error || "The assistant could not answer. Choose the stops below."); return; }
       setAnswer(data.answer);
+      // the server sends the legs with stop names; an older server does not, so they are read from the answer text
+      const withNames = Array.isArray(data.legs) && data.legs.length > 0 && data.legs.every((l: AnswerLeg) => l.from_name && l.to_name);
+      setAnswerLegs(withNames ? data.legs : legsFromAnswer(data.answer));
       if (data.from) setFromId(data.from.id);
       if (data.to) setToId(data.to.id);
       if (data.need_seat) setNeedSeat(true);
@@ -106,6 +112,10 @@ export default function SmartSuggestionsScreen() {
   }, [search]);
 
   const swap = () => { setFromId(toId); setToId(fromId); };
+
+  const answerText = answer && answerLegs.some((l) => l.from_name)
+    ? answer.split("\n").filter((line) => !/^(\d\) |There is no direct bus|Take bus |This way is served by bus |Board at )/.test(line)).join("\n").trim()
+    : answer;
 
   const bookLeg = (l: Leg) =>
     router.push({ pathname: "/newbooking", params: { route_id: l.route_id, from: l.from_stop_id, to: l.to_stop_id } } as any);
@@ -162,12 +172,13 @@ export default function SmartSuggestionsScreen() {
             {asking ? <ActivityIndicator color="#fff" size="small" /> : <Ionicons name="sparkles" size={18} color="#fff" />}
           </TouchableOpacity>
         </View>
-        {answer && (
+        {answerText ? (
           <View style={styles.tipCard}>
             <View style={styles.tipIconWrap}><Ionicons name="sparkles" size={18} color="#1a3cff" /></View>
-            <Text style={[styles.tipText, { flex: 1 }]}>{answer}</Text>
+            <Text style={[styles.tipText, { flex: 1 }]}>{answerText}</Text>
           </View>
-        )}
+        ) : null}
+        {answerLegs.length > 0 && <JourneySteps legs={answerLegs} />}
 
         <View style={[styles.selectorCard, { marginTop: 14 }]}>
           <TouchableOpacity style={styles.stopRow} onPress={() => setPickerFor("from")}>

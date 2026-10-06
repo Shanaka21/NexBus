@@ -1,8 +1,9 @@
 // Seeds the pilot data: one operator, six routes (177 Kaduwela - Kollupitiya, 143 Kaduwela - Pettah, 190 Meegoda - Pettah,
-// 505 Alawwa - Giriulla, 17 Panadura - Kandy, 05 Colombo - Kurunegala) with only their bus stops, their vehicles and
-// trips, and demo accounts for every role. Stop positions are approximate (OpenStreetMap town centres).
-// Safe to run again: stops, routes, vehicles and accounts are overwritten with the same ids, and
-// trips are created only when they do not exist yet, so live trip state and seat counts are kept.
+// 505 Alawwa - Giriulla, 17 Panadura - Kandy, 05 Colombo - Kurunegala) in both directions, with only their bus stops, a
+// timetable (a bus every few minutes from 05:00 to 22:00), the buses to run it, and demo accounts for every role.
+// Stop positions are approximate (OpenStreetMap town centres).
+// Safe to run again: stops, routes, vehicles and accounts are overwritten with the same ids; the seeded trips and demo
+// bookings are recreated, while trips that real bookings point to are kept.
 require('dotenv').config();
 const bcrypt = require('bcryptjs');
 const { pool } = require('./config/db');
@@ -24,12 +25,9 @@ const STOPS = [
   ['kaduwela', 'Kaduwela', 'කඩුවෙල', 6.9333, 79.9858],
   ['weliweriya', 'Weliweriya', 'වැලිවේරිය', 7.0323, 80.0283],
   ['yakkala', 'Yakkala', 'යක්කල', 7.0859, 80.0336],
-  ['narahenpita', 'Narahenpita', 'නාරාහේන්පිට', 6.8960, 79.8777],
   ['nugegoda', 'Nugegoda', 'නුගේගොඩ', 6.8649, 79.8997],
-  ['maharagama', 'Maharagama', 'මහරගම', 6.8480, 79.9265],
-  ['kottawa', 'Kottawa', 'කොට්ටාව', 6.8412, 79.9654],
-  ['homagama', 'Homagama', 'හෝමාගම', 6.8441, 80.0021],
   ['meegoda', 'Meegoda', 'මීගොඩ', 6.8441, 80.0460],
+  ['athurugiriya', 'Athurugiriya', 'අතුරුගිරිය', 6.8780, 79.9900],
   ['dehiwala', 'Dehiwala', 'දෙහිවල', 6.8518, 79.8645],
   ['mount_lavinia', 'Mount Lavinia', 'ගල්කිස්ස', 6.8311, 79.8636],
   ['moratuwa', 'Moratuwa', 'මොරටුව', 6.7731, 79.8816],
@@ -46,25 +44,36 @@ const STOPS = [
   ['kurunegala', 'Kurunegala', 'කුරුණෑගල', 7.4870, 80.3649]
 ];
 
+// Timetable: a bus leaves every `headway` minutes from 05:00 until 22:00 (the last departure), from both ends of a route.
+// The way back is a route of its own with the stops reversed and the same number, so booking, ETAs and the planner
+// treat each direction like any other route. `minutes` is the trip time; it sets how many buses each direction needs.
+const FIRST_DEPARTURE_MIN = 5 * 60;
+const LAST_DEPARTURE_MIN = 22 * 60;
+const DAYS_AHEAD = 3; // today and the next two days
+
 const ROUTES = [
-  { id: 'r177', number: '177', type: 'normal', fare: 70, minutes: 60, stops: ['kaduwela', 'malabe', 'battaramulla', 'rajagiriya', 'borella', 'kollupitiya'] },
-  { id: 'r143', number: '143', type: 'normal', fare: 75, minutes: 65, stops: ['kaduwela', 'malabe', 'battaramulla', 'rajagiriya', 'borella', 'maradana', 'pettah'] },
-  { id: 'r190', number: '190', type: 'normal', fare: 100, minutes: 100, stops: ['meegoda', 'homagama', 'kottawa', 'maharagama', 'nugegoda', 'narahenpita', 'borella', 'maradana', 'pettah'] },
-  { id: 'r505', number: '505', type: 'normal', fare: 50, minutes: 30, stops: ['alawwa', 'giriulla'] },
-  { id: 'r017', number: '17', type: 'semi_luxury', fare: 520, minutes: 330, stops: ['panadura', 'moratuwa', 'mount_lavinia', 'dehiwala', 'nugegoda', 'rajagiriya', 'battaramulla', 'malabe', 'kaduwela', 'weliweriya', 'yakkala', 'nittambuwa', 'warakapola', 'kegalle', 'peradeniya', 'kandy'] },
-  { id: 'r005', number: '05', type: 'semi_luxury', fare: 350, minutes: 200, stops: ['fort', 'pettah', 'kadawatha', 'nittambuwa', 'warakapola', 'alawwa', 'polgahawela', 'kurunegala'] }
+  { id: 'r177', number: '177', type: 'normal', fare: 70, minutes: 60, headway: 10, stops: ['kaduwela', 'malabe', 'battaramulla', 'rajagiriya', 'borella', 'kollupitiya'] },
+  { id: 'r143', number: '143', type: 'normal', fare: 75, minutes: 65, headway: 5, stops: ['kaduwela', 'malabe', 'battaramulla', 'rajagiriya', 'borella', 'maradana', 'pettah'] },
+  { id: 'r190', number: '190', type: 'normal', fare: 100, minutes: 100, headway: 15, stops: ['meegoda', 'athurugiriya', 'malabe', 'battaramulla', 'rajagiriya', 'borella', 'maradana', 'pettah'] },
+  { id: 'r505', number: '505', type: 'normal', fare: 50, minutes: 30, headway: 20, stops: ['alawwa', 'giriulla'] },
+  { id: 'r017', number: '17', type: 'semi_luxury', fare: 520, minutes: 330, headway: 30, stops: ['panadura', 'moratuwa', 'mount_lavinia', 'dehiwala', 'nugegoda', 'rajagiriya', 'battaramulla', 'malabe', 'kaduwela', 'weliweriya', 'yakkala', 'nittambuwa', 'warakapola', 'kegalle', 'peradeniya', 'kandy'] },
+  { id: 'r005', number: '05', type: 'semi_luxury', fare: 350, minutes: 200, headway: 30, stops: ['fort', 'pettah', 'kadawatha', 'nittambuwa', 'warakapola', 'alawwa', 'polgahawela', 'kurunegala'] }
 ];
 
+// every route in both directions: r177 (Kaduwela - Kollupitiya) and r177r (Kollupitiya - Kaduwela)
+const ALL_ROUTES = ROUTES.flatMap((r) => [r, { ...r, id: `${r.id}r`, stops: [...r.stops].reverse(), reverse: true }]);
+
+// Enough buses per direction to keep the headway: one trip takes `minutes`, so a bus is back every minutes/headway departures
+const SEATS = 56; // every seat can be reserved in the app (the seat picker shows reservable_seats)
+const fleetSize = (r) => Math.ceil(r.minutes / r.headway) + 1;
+const regNo = (r, i) => `NB-${r.number.padStart(3, '0')}${r.reverse ? 'B' : 'A'}${String(i + 1).padStart(2, '0')}`;
+const fleetOf = Object.fromEntries(ALL_ROUTES.map((r) => [r.id, Array.from({ length: fleetSize(r) }, (_, i) => regNo(r, i))]));
+
 // registration number, route id, seat capacity, reservable seats, operator id
-// Every bus has 56 seats and all of them can be reserved in the app (the seat picker shows reservable_seats).
-const VEHICLES = [
-  ['NB-1771', 'r177', 56, 56, 'op-city'], ['NB-1772', 'r177', 56, 56, 'op-city'],
-  ['NB-1431', 'r143', 56, 56, 'op-city'], ['NB-1432', 'r143', 56, 56, 'op-city'],
-  ['NB-1901', 'r190', 56, 56, 'op-city'], ['NB-1902', 'r190', 56, 56, 'op-city'],
-  ['NB-5051', 'r505', 56, 56, 'op-city'], ['NB-5052', 'r505', 56, 56, 'op-city'],
-  ['NB-0171', 'r017', 56, 56, 'op-city'], ['NB-0172', 'r017', 56, 56, 'op-city'],
-  ['NB-0051', 'r005', 56, 56, 'op-city'], ['NB-0052', 'r005', 56, 56, 'op-city']
-];
+const VEHICLES = ALL_ROUTES.flatMap((r) => fleetOf[r.id].map((reg) => [reg, r.id, SEATS, SEATS, 'op-city']));
+
+// The two demo drivers each drive one bus; the other trips have no driver yet (an operator assigns one)
+const DRIVER_VEHICLE = { 'driver@nexbus.lk': fleetOf.r143[0], 'driver2@nexbus.lk': fleetOf.r177[0] };
 
 const ACCOUNTS = [
   { email: 'demo@nexbus.lk', password: 'Demo@1234', full_name: 'Demo User', role: 'passenger', phone: '0771234567' },
@@ -111,6 +120,21 @@ async function ensureAccount(a) {
   return uid;
 }
 
+const dayKey = (ms) => new Date(ms + COLOMBO_OFFSET).toISOString().slice(0, 10).replace(/-/g, '');
+
+const TRIP_COLUMNS = ['id', 'route_id', 'route_number', 'vehicle_id', 'registration_no', 'operator_id', 'driver_id', 'driver_name',
+  'scheduled_departure', 'service_date', 'actual_departure', 'direction', 'status', 'delay_minutes', 'reservable_seats', 'available_seats', 'created_at'];
+
+// Inserts many trips per query: the full timetable is a few thousand rows
+async function insertTrips(rows) {
+  const per = TRIP_COLUMNS.length;
+  for (let i = 0; i < rows.length; i += 300) {
+    const chunk = rows.slice(i, i + 300);
+    const values = chunk.map((_, j) => `(${TRIP_COLUMNS.map((__, c) => `$${j * per + c + 1}`).join(',')})`).join(',');
+    await pool.query(`INSERT INTO trips (${TRIP_COLUMNS.join(', ')}) VALUES ${values} ON CONFLICT (id) DO NOTHING`, chunk.flat());
+  }
+}
+
 async function seed() {
   const now = Date.now();
 
@@ -131,10 +155,16 @@ async function seed() {
   }
   console.log(`  ✓ ${OPERATORS.length} operators, ${STOPS.length} stops`);
 
+  console.log('Clearing the previous seeded timetable...');
+  // The demo bookings and the seeded trips of an earlier run are replaced; trips that real bookings point to stay
+  await pool.query("DELETE FROM payments WHERE id LIKE 'demo-pay-%'");
+  await pool.query("DELETE FROM bookings WHERE id LIKE 'demo-%'");
+  await pool.query("DELETE FROM trips WHERE id LIKE 'seed-%' AND id NOT IN (SELECT trip_id FROM bookings WHERE trip_id IS NOT NULL)");
+
   console.log('Seeding routes...');
   const stopById = Object.fromEntries(STOPS.map(s => [s[0], s]));
   const routeDocs = {};
-  for (const r of ROUTES) {
+  for (const r of ALL_ROUTES) {
     let total = 0;
     const stops = r.stops.map((stopId, i) => {
       if (i > 0) total += haversine([stopById[r.stops[i - 1]][3], stopById[r.stops[i - 1]][4]], [stopById[stopId][3], stopById[stopId][4]]);
@@ -160,6 +190,7 @@ async function seed() {
       await pool.query('INSERT INTO route_stops (route_id, stop_id, sequence_no, distance_from_origin_km) VALUES ($1,$2,$3,$4)', [r.id, s.stop_id, s.sequence_no, s.distance_from_origin_km]);
     }
   }
+  // stops that no seeded route uses any more (e.g. after a route is changed) are removed, unless something refers to them
   await pool.query(
     `DELETE FROM bus_stops WHERE id <> ALL($1)
        AND id NOT IN (SELECT stop_id FROM route_stops)
@@ -167,12 +198,10 @@ async function seed() {
        AND id NOT IN (SELECT alighting_stop_id FROM bookings WHERE alighting_stop_id IS NOT NULL)`,
     [STOPS.map((x) => x[0])]
   );
-  console.log(`  ✓ ${ROUTES.length} routes`);
+  console.log(`  ✓ ${ALL_ROUTES.length} routes (${ROUTES.length} routes, both directions)`);
 
   console.log('Seeding vehicles...');
-  // Upsert (not delete + recreate): trips/bookings/payments reference vehicles by foreign key, and unlike
-  // Firestore, Postgres enforces that — wiping vehicles that already have trips would fail. This also
-  // preserves any live vehicle state (position, status) across reseeds, same as operators/routes above.
+  // Upsert (not delete + recreate): live vehicle state (position, status) is kept across reseeds
   for (const [reg, routeId, capacity, reservable, operatorId] of VEHICLES) {
     await pool.query(
       `INSERT INTO vehicles (id, operator_id, route_id, seat_capacity, reservable_seats, booked_seats, status, delay_minutes, created_at)
@@ -181,17 +210,14 @@ async function seed() {
       [reg, operatorId, routeId, capacity, reservable, now]
     );
   }
-  // Trips that were created earlier keep the seat counts of the time: bring the upcoming ones in line with the
-  // vehicle, minus the seats that are already held or paid for
-  for (const [reg, , , reservable] of VEHICLES) {
-    await pool.query(
-      `UPDATE trips SET reservable_seats = $1::int,
-              available_seats = GREATEST(0, $1::int - COALESCE((SELECT SUM(seat_count) FROM bookings b
-                                                          WHERE b.trip_id = trips.id AND b.status IN ('pending_payment', 'confirmed')), 0)::int)
-        WHERE vehicle_id = $2 AND status = 'scheduled'`,
-      [reservable, reg]
-    );
-  }
+  // buses of an earlier fleet plan are removed unless a trip, booking or position log still refers to them
+  await pool.query(
+    `DELETE FROM vehicles WHERE id <> ALL($1)
+       AND id NOT IN (SELECT vehicle_id FROM trips WHERE vehicle_id IS NOT NULL)
+       AND id NOT IN (SELECT vehicle_id FROM bookings WHERE vehicle_id IS NOT NULL)
+       AND id NOT IN (SELECT vehicle_id FROM location_logs WHERE vehicle_id IS NOT NULL)`,
+    [VEHICLES.map((v) => v[0])]
+  );
   console.log(`  ✓ ${VEHICLES.length} vehicles`);
 
   console.log('Seeding accounts...');
@@ -200,62 +226,48 @@ async function seed() {
     uids[a.email] = await ensureAccount(a);
     console.log(`  ✓ ${a.role.padEnd(9)} ${a.email} / ${a.password}`);
   }
+  const driverOf = {};
+  for (const [email, reg] of Object.entries(DRIVER_VEHICLE)) driverOf[reg] = { id: uids[email], name: ACCOUNTS.find((a) => a.email === email).full_name };
 
   console.log('Seeding trips...');
-  const driverFor = { 'op-city': ['driver@nexbus.lk', 'driver2@nexbus.lk'] };
   const today = colomboMidnight(now);
-  const slots = [7 * 60, 12 * 60 + 30, 17 * 60 + 30]; // minutes after midnight
-  const existing = new Set((await pool.query('SELECT id FROM trips')).rows.map(r => r.id));
-  const driverNames = Object.fromEntries(ACCOUNTS.map(a => [a.email, a.full_name]));
-
-  const tripDoc = (vehicleIndex, scheduled) => {
-    const [reg, routeId, , reservable, operatorId] = VEHICLES[vehicleIndex];
-    const drivers = driverFor[operatorId];
-    const driverEmail = drivers[vehicleIndex % drivers.length];
-    return {
-      route_id: routeId, route_number: routeDocs[routeId].route_number, vehicle_id: reg, registration_no: reg,
-      operator_id: operatorId, driver_id: uids[driverEmail], driver_name: driverNames[driverEmail],
-      scheduled_departure: scheduled, service_date: colomboDay(scheduled), actual_departure: null, direction: 'outbound', status: 'scheduled',
-      delay_minutes: 0, reservable_seats: reservable, available_seats: reservable, created_at: now
+  const tripRow = (id, r, vehicle, scheduled, extra = {}) => {
+    const d = driverOf[vehicle];
+    const t = {
+      status: 'scheduled', actual_departure: null, available_seats: SEATS, ...extra
     };
+    return [id, r.id, r.number, vehicle, vehicle, 'op-city', d ? d.id : null, d ? d.name : null,
+      scheduled, colomboDay(scheduled), t.actual_departure, r.reverse ? 'inbound' : 'outbound', t.status, 0, SEATS, t.available_seats, now];
   };
 
-  const insertTrip = async (id, t) => pool.query(
-    `INSERT INTO trips (id, route_id, route_number, vehicle_id, registration_no, operator_id, driver_id, driver_name,
-       scheduled_departure, service_date, actual_departure, direction, status, delay_minutes, reservable_seats, available_seats, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
-    [id, t.route_id, t.route_number, t.vehicle_id, t.registration_no, t.operator_id, t.driver_id, t.driver_name,
-      t.scheduled_departure, t.service_date, t.actual_departure, t.direction, t.status, t.delay_minutes, t.reservable_seats, t.available_seats, t.created_at]
-  );
-
-  const dayKey = (ms) => new Date(ms + COLOMBO_OFFSET).toISOString().slice(0, 10).replace(/-/g, '');
-  let newTrips = 0;
-  for (let vi = 0; vi < VEHICLES.length; vi++) {
-    for (let day = 0; day < 7; day++) {
-      for (let si = 0; si < slots.length; si++) {
-        const scheduled = today + day * DAY_MS + (slots[si] + vi * 6) * 60000;
+  const rows = [];
+  const firstTrip = {}; // route id -> first upcoming trip id, used by the demo booking
+  for (const r of ALL_ROUTES) {
+    const fleet = fleetOf[r.id];
+    let k = 0; // buses take the departures in turn, so each one is back in time for its next trip
+    for (let day = 0; day < DAYS_AHEAD; day++) {
+      for (let m = FIRST_DEPARTURE_MIN; m <= LAST_DEPARTURE_MIN; m += r.headway) {
+        const vehicle = fleet[k++ % fleet.length];
+        const scheduled = today + day * DAY_MS + m * 60000;
         if (scheduled < now) continue;
-        const id = `seed-${VEHICLES[vi][0]}-${dayKey(today + day * DAY_MS)}-${si}`;
-        if (!existing.has(id)) { await insertTrip(id, tripDoc(vi, scheduled)); newTrips++; }
+        const hhmm = `${String(Math.floor(m / 60)).padStart(2, '0')}${String(m % 60).padStart(2, '0')}`;
+        const id = `seed-${r.id}-${dayKey(scheduled)}-${hhmm}`;
+        if (!firstTrip[r.id]) firstTrip[r.id] = id;
+        rows.push(tripRow(id, r, vehicle, scheduled));
       }
     }
-    // a bus about to leave, so the demo always has upcoming trips
-    const demoId = `seed-${VEHICLES[vi][0]}-${dayKey(today)}-demo`;
-    if (!existing.has(demoId)) { await insertTrip(demoId, tripDoc(vi, now + (10 + vi * 3) * 60000)); newTrips++; }
   }
-  console.log(`  ✓ ${newTrips} new trips`);
+  await insertTrips(rows);
+  console.log(`  ✓ ${rows.length} trips (05:00 to 22:00, ${DAYS_AHEAD} days)`);
+  for (const r of ROUTES) {
+    console.log(`    ${r.number.padEnd(4)} every ${String(r.headway).padStart(2)} min, ${fleetOf[r.id].length} buses each way`);
+  }
 
   console.log('Seeding demo bookings...');
   const demoUid = uids['demo@nexbus.lk'];
-  const upcomingId = `seed-NB-1771-${dayKey(today)}-demo`;
+  const upcomingId = firstTrip.r177;
   const pastTripId = 'seed-past-r143';
-  const pastTrip = { ...tripDoc(2, now - 2 * DAY_MS), status: 'completed', actual_departure: now - 2 * DAY_MS, available_seats: 16 };
-  const pastExisted = existing.has(pastTripId);
-  if (pastExisted) {
-    await pool.query('UPDATE trips SET status=$1, actual_departure=$2, available_seats=$3 WHERE id=$4', [pastTrip.status, pastTrip.actual_departure, pastTrip.available_seats, pastTripId]);
-  } else {
-    await insertTrip(pastTripId, pastTrip);
-  }
+  await insertTrips([tripRow(pastTripId, ALL_ROUTES.find((r) => r.id === 'r143'), fleetOf.r143[0], now - 2 * DAY_MS, { status: 'completed', actual_departure: now - 2 * DAY_MS })]);
 
   const bookings = [
     { key: 0, trip: upcomingId, route: 'r177', from: 'kaduwela', to: 'borella', seats: 2, status: 'confirmed', pay: 'success', age: 0, seatsHeld: true },
@@ -264,7 +276,6 @@ async function seed() {
   ];
   for (const bk of bookings) {
     const id = `demo-${demoUid}-${bk.key}`;
-    const wasThere = (await pool.query('SELECT id FROM bookings WHERE id = $1', [id])).rows[0];
     const r = routeDocs[bk.route];
     const trip = (await pool.query('SELECT * FROM trips WHERE id = $1', [bk.trip])).rows[0];
     const amount = r.base_fare_lkr * bk.seats;
@@ -288,7 +299,7 @@ async function seed() {
         [payId, id, demoUid, trip.operator_id, amount, `DEMO${bk.key}`, createdAt]
       );
     }
-    if (bk.seatsHeld && !wasThere) await pool.query('UPDATE trips SET available_seats = available_seats - $1 WHERE id = $2', [bk.seats, bk.trip]);
+    if (bk.seatsHeld) await pool.query('UPDATE trips SET available_seats = available_seats - $1 WHERE id = $2', [bk.seats, bk.trip]);
   }
   console.log(`  ✓ ${bookings.length} demo bookings`);
 

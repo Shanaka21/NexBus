@@ -42,7 +42,6 @@ export default function SplashScreen() {
       </Animated.View>
 
       <Animated.View style={{ opacity: fadeAnim }}>
-        <Text style={styles.title}>NexBus</Text>
         <Text style={styles.subtitle}>Track your bus in real time</Text>
       </Animated.View>
 
@@ -79,18 +78,12 @@ const styles = StyleSheet.create({
   iconBox: {
     marginBottom: 24,
   },
-  logo: { width: 140, height: 140, borderRadius: 34 },
-  title: {
-    fontSize: 36,
-    fontWeight: "bold",
-    color: "#fff",
-    textAlign: "center",
-  },
+  logo: { width: 260, height: 145, resizeMode: "contain" },
   subtitle: {
     fontSize: 16,
     color: "rgba(255,255,255,0.75)",
     textAlign: "center",
-    marginTop: 8,
+    marginTop: 0,
     marginBottom: 36,
   },
   progressContainer: {

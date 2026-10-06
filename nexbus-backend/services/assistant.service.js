@@ -186,7 +186,8 @@ async function ask({ query, history = [], lat, lng }, now = Date.now()) {
     ...base,
     options: liveOptions,
     explanation: live ? ranked.explanation : null,
-    legs: best.legs.map(({ route_id, route_number, from_stop_id, to_stop_id }) => ({ route_id, route_number, from_stop_id, to_stop_id })),
+    legs: best.legs.map(({ route_id, route_number, from_stop_id, to_stop_id, from_name, to_name, direction, stop_count, km, minutes, via }) =>
+      ({ route_id, route_number, from_stop_id, to_stop_id, from_name, to_name, direction, stop_count, km, minutes, via })),
     answer: withNotes(lines.join('\n'))
   };
 }

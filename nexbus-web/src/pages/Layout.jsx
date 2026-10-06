@@ -45,8 +45,8 @@ export default function Layout() {
     <div className={`shell${collapsed ? ' collapsed' : ''}`}>
       <aside className="sidebar">
         <div className="brand">
-          <img className="brand-logo" src="/logo.png" alt="" />
-          <div className="brand-name">NexBus</div>
+          <img className="brand-logo" src="/logo.png" alt="NexBus" />
+          <img className="brand-logo-mark" src="/logo-mark.png" alt="NexBus" />
           <button className="collapse-btn" onClick={toggleSidebar} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} title={collapsed ? 'Expand' : 'Collapse'}>
             <ChevronLeftIcon size={16} />
           </button>

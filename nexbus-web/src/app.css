@@ -407,7 +407,12 @@ html { scroll-behavior: smooth; }
 .avatar-sm { width: 30px; height: 30px; font-size: 11px; }
 
 /* ---------- logo ---------- */
-.brand-logo { width: 44px; height: 44px; border-radius: 12px; object-fit: contain; flex-shrink: 0; display: block; }
-.sidebar .brand-logo { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35); }
-.login-hero .brand-logo { width: 52px; height: 52px; }
-.login-card .brand-logo { width: 84px; height: 84px; border-radius: 22px; box-shadow: 0 8px 22px rgba(26, 60, 255, 0.3); }
+.brand-logo { width: 150px; height: auto; flex-shrink: 0; display: block; filter: drop-shadow(0 4px 12px rgba(26, 60, 255, 0.25)); }
+.brand-logo-mark { display: none; width: 44px; height: 44px; object-fit: contain; }
+.sidebar .brand-logo { filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.4)); }
+.login-hero .brand-logo { width: 190px; }
+.login-card .brand-logo { width: 190px; }
+@media (min-width: 1001px) {
+  .shell.collapsed .sidebar .brand-logo { display: none; }
+  .shell.collapsed .sidebar .brand-logo-mark { display: block; }
+}

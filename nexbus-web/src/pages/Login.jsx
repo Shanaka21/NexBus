@@ -63,8 +63,7 @@ export default function Login() {
     <div className="login-page">
       <aside className="login-hero">
         <div className="brand">
-          <img className="brand-logo" src="/logo.png" alt="" />
-          <div className="brand-name">NexBus</div>
+          <img className="brand-logo" src="/logo.png" alt="NexBus" />
         </div>
 
         <div className="hero-copy">
@@ -88,8 +87,7 @@ export default function Login() {
       <main className="login-panel">
         <div className="login-card">
           <div className="brand brand-mobile">
-            <img className="brand-logo" src="/logo.png" alt="" />
-            <div className="brand-name">NexBus</div>
+            <img className="brand-logo" src="/logo.png" alt="NexBus" />
           </div>
 
           <h1>Welcome Back</h1>

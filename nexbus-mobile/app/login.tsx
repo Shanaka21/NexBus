@@ -169,7 +169,6 @@ export default function LoginScreen() {
 
       <View style={styles.header}>
         <Image source={require("../assets/images/logo.png")} style={styles.logo} />
-        <Text style={styles.appTitle}>NexBus</Text>
       </View>
 
       <View style={[styles.card, { backgroundColor: p.card }]}>
@@ -275,8 +274,7 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   header:   { alignItems: "center", marginBottom: 24 },
-  logo:     { width: 88, height: 88, borderRadius: 22, marginBottom: 10 },
-  appTitle: { fontSize: 26, fontWeight: "bold", color: "#1a3cff" },
+  logo:     { width: 190, height: 106, resizeMode: "contain" },
 
   card:        { width: "100%", borderRadius: 20, padding: 24 },
   cardTitle:   { fontSize: 22, fontWeight: "bold", marginBottom: 6 },

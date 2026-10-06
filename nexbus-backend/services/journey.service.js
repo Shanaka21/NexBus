@@ -116,7 +116,8 @@ function buildPlans(routes, stops, fromId, toId) {
   return plans
     .sort((p, q) => p.score - q.score)
     .filter((p) => {
-      const key = p.legs.map((l) => `${l.route_id}:${l.from_stop_id}>${l.to_stop_id}`).join('|');
+      // by route number: a route that also has its own way-back route is listed once, using the one that really runs this way
+      const key = p.legs.map((l) => `${l.route_number}:${l.from_stop_id}>${l.to_stop_id}`).join('|');
       if (seen.has(key)) return false;
       seen.add(key);
       return true;

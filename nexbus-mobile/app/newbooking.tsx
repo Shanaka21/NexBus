@@ -32,6 +32,7 @@ export default function NewBookingScreen() {
   const [selectedRoute, setSelectedRoute] = useState<RouteItem | null>(null);
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loadingTrips, setLoadingTrips] = useState(false);
+  const [showAllTrips, setShowAllTrips] = useState(false);
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
   const [boardingId, setBoardingId] = useState<string | null>(null);
   const [alightingId, setAlightingId] = useState<string | null>(null);
@@ -59,6 +60,7 @@ export default function NewBookingScreen() {
   useEffect(() => {
     if (!selectedRoute) return;
     setLoadingTrips(true);
+    setShowAllTrips(false);
     setSelectedTrip(null);
     apiJson(`/trips?route_id=${selectedRoute.id}`)
       .then(({ ok, data }) => {
@@ -185,7 +187,8 @@ export default function NewBookingScreen() {
             {!loadingTrips && trips.length === 0 && (
               <Text style={styles.hint}>No trips with reservable seats are open on this route right now.</Text>
             )}
-            {trips.map((t) => {
+            {/* a frequent route has hundreds of departures: show the next few first */}
+            {(showAllTrips ? trips : trips.slice(0, 12)).map((t) => {
               const full = t.available_seats === 0;
               const active = selectedTrip?.id === t.id;
               return (
@@ -209,6 +212,12 @@ export default function NewBookingScreen() {
                 </TouchableOpacity>
               );
             })}
+
+            {!showAllTrips && trips.length > 12 && (
+              <TouchableOpacity style={styles.moreTrips} onPress={() => setShowAllTrips(true)}>
+                <Text style={styles.moreTripsText}>Show {trips.length - 12} more departures</Text>
+              </TouchableOpacity>
+            )}
 
             <Text style={styles.sectionTitle}>3. Boarding and Alighting Stops</Text>
             <Text style={styles.groupLabel}>BOARDING</Text>
@@ -478,4 +487,6 @@ const styles = StyleSheet.create({
 
   bookButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", borderRadius: 14, paddingVertical: 16, gap: 10 },
   bookButtonText: { color: "#fff", fontSize: 17, fontWeight: "bold" },
+  moreTrips: { alignSelf: "center", paddingHorizontal: 18, paddingVertical: 9, borderRadius: 20, borderWidth: 1, borderColor: "#c8d6ff", backgroundColor: "#f0f4ff", marginBottom: 8 },
+  moreTripsText: { fontSize: 13, fontWeight: "700", color: "#1a3cff" },
 });
