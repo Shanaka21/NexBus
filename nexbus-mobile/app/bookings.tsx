@@ -159,6 +159,7 @@ export default function BookingsScreen() {
     if (!hasConfirmed) return;
     let stopped = false;
     const load = async () => {
+      fetchBookings(); // keeps codes and verified ticks current without a manual refresh
       try {
         const { ok, data } = await apiJson("/buses");
         if (!stopped && ok && Array.isArray(data)) { setLiveBuses(data); setNow(Date.now()); }
@@ -167,7 +168,7 @@ export default function BookingsScreen() {
     load();
     const timer = setInterval(load, BUS_POLL_MS);
     return () => { stopped = true; clearInterval(timer); };
-  }, [hasConfirmed]);
+  }, [hasConfirmed, fetchBookings]);
 
   // the bus of this booking's trip, if it is running and still sending positions
   const busFor = (b: Booking): LiveBus | null =>

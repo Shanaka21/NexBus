@@ -96,7 +96,7 @@ exports.tripsQuery = Joi.object({
   status: Joi.string().valid('scheduled', 'running', 'completed', 'cancelled')
 });
 
-exports.verifyBoarding = Joi.object({ code: Joi.string().trim().pattern(/^d{4}$/).required().messages({ 'string.pattern.base': 'Enter the 4-digit code' }) });
+exports.verifyBoarding = Joi.object({ code: Joi.string().trim().pattern(/^\d{4}$/).required().messages({ 'string.pattern.base': 'Enter the 4-digit code' }) });
 
 exports.tripStatus = Joi.object({ status: Joi.string().valid('running', 'completed', 'cancelled').required() });
 
