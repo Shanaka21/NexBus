@@ -66,6 +66,7 @@ exports.routeUpdate = Joi.object({
 exports.vehicle = Joi.object({
   registration_no: Joi.string().trim().min(3).max(20).required(),
   route_id: id.required(),
+  driver_id: id.allow(null, ''),
   seat_capacity: Joi.number().integer().min(1).max(80).required(),
   reservable_seats: Joi.number().integer().min(0).max(Joi.ref('seat_capacity')).required()
 });
@@ -73,6 +74,7 @@ exports.vehicle = Joi.object({
 exports.vehicleUpdate = Joi.object({
   registration_no: Joi.string().trim().min(3).max(20),
   route_id: id,
+  driver_id: id.allow(null, ''),
   seat_capacity: Joi.number().integer().min(1).max(80),
   reservable_seats: Joi.number().integer().min(0).max(80),
   status: Joi.string().valid('active', 'delayed', 'emergency', 'inactive')
@@ -83,7 +85,7 @@ exports.vehicleStatus = Joi.object({ status: Joi.string().valid('active', 'delay
 exports.trip = Joi.object({
   route_id: id.required(),
   vehicle_id: id.required(),
-  driver_id: id.required(),
+  driver_id: id, // defaults to the driver assigned to the vehicle
   scheduled_departure: Joi.date().required(),
   direction: Joi.string().valid('outbound', 'inbound')
 });
@@ -93,6 +95,8 @@ exports.tripsQuery = Joi.object({
   date: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/),
   status: Joi.string().valid('scheduled', 'running', 'completed', 'cancelled')
 });
+
+exports.verifyBoarding = Joi.object({ code: Joi.string().trim().pattern(/^d{4}$/).required().messages({ 'string.pattern.base': 'Enter the 4-digit code' }) });
 
 exports.tripStatus = Joi.object({ status: Joi.string().valid('running', 'completed', 'cancelled').required() });
 

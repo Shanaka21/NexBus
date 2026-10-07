@@ -25,10 +25,9 @@ function row(r) {
 }
 
 async function createTrip(user, dto) {
-  const [vehicleRes, routeRes, driverRes] = await Promise.all([
+  const [vehicleRes, routeRes] = await Promise.all([
     pool.query('SELECT * FROM vehicles WHERE id = $1', [dto.vehicle_id]),
-    pool.query('SELECT * FROM routes WHERE id = $1', [dto.route_id]),
-    pool.query('SELECT * FROM users WHERE id = $1', [dto.driver_id])
+    pool.query('SELECT * FROM routes WHERE id = $1', [dto.route_id])
   ]);
   const vehicle = vehicleRes.rows[0];
   const route = routeRes.rows[0];
@@ -37,7 +36,10 @@ async function createTrip(user, dto) {
   if (vehicle.operator_id !== user.operatorId) throw new AppError(403, 'FORBIDDEN', 'This vehicle belongs to another company');
   if (vehicle.route_id !== dto.route_id) throw new AppError(400, 'VEHICLE_ROUTE_MISMATCH', 'This vehicle is not permitted on that route');
 
-  const driver = driverRes.rows[0];
+  // the trip goes to the driver assigned to the bus unless the operator picks someone else
+  const driverId = dto.driver_id || vehicle.driver_id;
+  if (!driverId) throw new AppError(400, 'DRIVER_REQUIRED', 'Assign a driver to this vehicle first (Vehicles page), or choose one for the trip');
+  const driver = (await pool.query('SELECT * FROM users WHERE id = $1', [driverId])).rows[0];
   if (!driver || driver.role !== 'driver' || driver.operator_id !== user.operatorId) {
     throw new AppError(400, 'DRIVER_INVALID', 'Driver must be a driver account of your company');
   }
@@ -48,7 +50,7 @@ async function createTrip(user, dto) {
   const now = Date.now();
   const data = {
     id, route_id: dto.route_id, route_number: route.route_number, vehicle_id: dto.vehicle_id,
-    registration_no: vehicle.id, operator_id: user.operatorId, driver_id: dto.driver_id,
+    registration_no: vehicle.id, operator_id: user.operatorId, driver_id: driverId,
     driver_name: driver.full_name || '', scheduled_departure: scheduledDeparture, service_date: colomboDate(scheduledDeparture),
     actual_departure: null, direction: dto.direction || 'outbound', status: 'scheduled', delay_minutes: 0,
     reservable_seats: reservable, available_seats: reservable, created_at: now
@@ -82,7 +84,54 @@ async function listTrips(user, q) {
 
   if (q.status) trips = trips.filter(t => t.status === q.status);
   else if (user.role === 'passenger' || user.role === 'admin') trips = trips.filter(t => ['scheduled', 'running'].includes(t.status));
-  return trips.sort((a, b) => a.scheduled_departure - b.scheduled_departure);
+  trips.sort((a, b) => a.scheduled_departure - b.scheduled_departure);
+  if (user.role === 'driver') await attachPassengers(trips);
+  return trips;
+}
+
+// The driver sees who has paid for a seat on each of their trips: name, seats and whether the boarding
+// code was already checked. The code itself stays with the passenger.
+async function attachPassengers(trips) {
+  const byTrip = new Map(trips.map((t) => [t.id, (t.passengers = [])]));
+  if (!trips.length) return;
+  const { rows } = await pool.query(
+    `SELECT b.id, b.trip_id, b.seat_numbers, b.seat_count, b.from_name, b.to_name, b.boarded_at, u.full_name
+       FROM bookings b JOIN users u ON u.id = b.user_id
+      WHERE b.trip_id = ANY($1) AND b.status IN ('confirmed', 'completed') ORDER BY b.created_at`,
+    [trips.map((t) => t.id)]
+  );
+  for (const b of rows) {
+    byTrip.get(b.trip_id).push({
+      booking_id: b.id, name: b.full_name || 'Passenger', seat_numbers: b.seat_numbers || [], seats: b.seat_count,
+      from: b.from_name, to: b.to_name, boarded: b.boarded_at != null
+    });
+  }
+}
+
+// The driver types the 4-digit code a passenger shows; it names the booking it belongs to on this trip.
+async function verifyBoarding(user, tripId, code) {
+  const { rows } = await pool.query('SELECT * FROM trips WHERE id = $1', [tripId]);
+  if (!rows[0]) throw new AppError(404, 'TRIP_NOT_FOUND', 'Trip not found');
+  if (rows[0].driver_id !== user.uid) throw new AppError(403, 'FORBIDDEN', 'This is not your trip');
+  if (!['scheduled', 'running'].includes(rows[0].status)) throw new AppError(409, 'TRIP_CLOSED', 'This trip is already finished');
+
+  const res = await pool.query(
+    `SELECT b.*, u.full_name FROM bookings b JOIN users u ON u.id = b.user_id
+      WHERE b.trip_id = $1 AND b.boarding_code = $2 AND b.status IN ('pending_payment', 'confirmed')`,
+    [tripId, code]
+  );
+  const b = res.rows[0];
+  if (!b) throw new AppError(404, 'CODE_NOT_FOUND', 'No booking on this trip has that code');
+  if (b.status !== 'confirmed') throw new AppError(409, 'NOT_PAID', 'This booking has not been paid for yet');
+
+  const already = b.boarded_at != null;
+  if (!already) {
+    await pool.query('UPDATE bookings SET boarded_at = $1 WHERE id = $2', [Date.now(), b.id]);
+  }
+  return {
+    verified: true, already_boarded: already, booking_id: b.id, name: b.full_name || 'Passenger',
+    seat_numbers: b.seat_numbers || [], seats: b.seat_count, from: b.from_name, to: b.to_name
+  };
 }
 
 async function getAvailability(tripId) {
@@ -220,4 +269,4 @@ async function tripSummary(user, tripId) {
   };
 }
 
-module.exports = { createTrip, listTrips, getAvailability, seatMap, changeStatus, tripSummary };
+module.exports = { createTrip, listTrips, verifyBoarding, getAvailability, seatMap, changeStatus, tripSummary };

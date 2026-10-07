@@ -9,7 +9,10 @@ import { apiJson } from "../../lib/api";
 import { clearSession, getUserName } from "../../lib/userSession";
 import { clockTime, dayTime } from "../../lib/format";
 
+type Passenger = { booking_id: string; name: string; seat_numbers: number[]; seats: number; boarded: boolean };
+
 type Trip = {
+  passengers?: Passenger[];
   id: string; route_id: string; route_number: string; registration_no: string; status: string;
   scheduled_departure: number; delay_minutes: number; reservable_seats: number; available_seats: number;
   service_date: string;
@@ -58,7 +61,12 @@ export default function DriverTripsScreen() {
   const today = colomboToday();
   const visible = useMemo(() => {
     const sorted = trips.slice().sort((a, b) => a.scheduled_departure - b.scheduled_departure);
-    if (tab === "today") return sorted.filter((t) => t.service_date === today);
+    // Today: the trip on the road now and today's trips still ahead. Finished trips are under History,
+    // and a scheduled trip whose departure time has passed without starting is a missed trip, so it is hidden.
+    if (tab === "today") {
+      const now = Date.now();
+      return sorted.filter((t) => t.service_date === today && (t.status === "running" || (t.status === "scheduled" && t.scheduled_departure >= now)));
+    }
     if (tab === "upcoming") return sorted.filter((t) => t.status === "scheduled" && t.service_date !== today);
     return sorted.filter((t) => ["completed", "cancelled"].includes(t.status)).reverse(); // most recent first
   }, [trips, tab, today]);
@@ -147,6 +155,17 @@ export default function DriverTripsScreen() {
                     <View style={styles.meta}><Ionicons name="alert-circle-outline" size={14} color="#ff9800" /><Text style={[styles.metaText, { color: "#ff9800" }]}>{item.delay_minutes} min late</Text></View>
                   )}
                 </View>
+                {!!item.passengers?.length && (
+                  <View style={styles.paxList}>
+                    {item.passengers.map((pax) => (
+                      <View key={pax.booking_id} style={styles.paxLine}>
+                        <Ionicons name={pax.boarded ? "checkmark-circle" : "person-outline"} size={14} color={pax.boarded ? "#4caf50" : "#888"} />
+                        <Text style={styles.paxText} numberOfLines={1}>{pax.name}</Text>
+                        <Text style={styles.paxSeat}>Seat {pax.seat_numbers.join(", ") || pax.seats}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
               </TouchableOpacity>
             );
           }}
@@ -176,6 +195,10 @@ const styles = StyleSheet.create({
   cardSub: { fontSize: 12, color: "#888", marginTop: 2 },
   chip: { borderRadius: 14, paddingHorizontal: 10, paddingVertical: 4 },
   chipText: { fontSize: 11, fontWeight: "700" },
+  paxList: { marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: "#f0f0f5", gap: 6 },
+  paxLine: { flexDirection: "row", alignItems: "center", gap: 6 },
+  paxText: { flex: 1, fontSize: 13, color: "#444" },
+  paxSeat: { fontSize: 12, fontWeight: "700", color: "#1a3cff" },
   cardBottom: { flexDirection: "row", flexWrap: "wrap", gap: 14 },
   meta: { flexDirection: "row", alignItems: "center", gap: 4 },
   metaText: { fontSize: 13, color: "#666" },

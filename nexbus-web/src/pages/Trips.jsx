@@ -12,19 +12,21 @@ const defaultDeparture = () => {
 
 function TripForm({ routes, vehicles, drivers, onClose, onSaved }) {
   const toast = useToast()
-  const [form, setForm] = useState({ route_id: routes[0]?.id || '', vehicle_id: '', driver_id: drivers[0]?.uid || '', departure: defaultDeparture() })
+  const [form, setForm] = useState({ route_id: routes[0]?.id || '', vehicle_id: '', driver_id: '', departure: defaultDeparture() })
   const [busy, setBusy] = useState(false)
   const [errors, setErrors] = useState({})
 
   const routeVehicles = vehicles.filter((v) => v.route_id === form.route_id)
   const vehicleId = routeVehicles.some((v) => v.id === form.vehicle_id) ? form.vehicle_id : routeVehicles[0]?.id || ''
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.value })
+  // left blank, the trip goes to the driver assigned to the vehicle
+  const assigned = routeVehicles.find((v) => v.id === vehicleId)?.driver_name
 
   const save = async () => {
     const next = {}
     if (!form.route_id) next.route_id = 'Select a route'
     if (!vehicleId) next.vehicle_id = 'This route has no vehicle yet. Register one first.'
-    if (!form.driver_id) next.driver_id = 'Select a driver'
+    if (!form.driver_id && !assigned) next.driver_id = 'No driver is assigned to this vehicle. Select one, or assign one on the Vehicles page.'
     if (!form.departure) next.departure = 'Choose a departure time'
     setErrors(next)
     if (Object.keys(next).length) return
@@ -33,7 +35,7 @@ function TripForm({ routes, vehicles, drivers, onClose, onSaved }) {
     try {
       await api('/trips', {
         method: 'POST',
-        body: { route_id: form.route_id, vehicle_id: vehicleId, driver_id: form.driver_id, scheduled_departure: colomboLocalToIso(form.departure) },
+        body: { route_id: form.route_id, vehicle_id: vehicleId, driver_id: form.driver_id || undefined, scheduled_departure: colomboLocalToIso(form.departure) },
       })
       toast('Trip scheduled')
       onSaved()
@@ -63,6 +65,7 @@ function TripForm({ routes, vehicles, drivers, onClose, onSaved }) {
         </Field>
         <Field label="Driver" error={errors.driver_id}>
           <select className="input" value={form.driver_id} onChange={set('driver_id')}>
+            <option value="">{assigned ? `Assigned driver (${assigned})` : 'Select a driver'}</option>
             {drivers.map((d) => <option key={d.uid} value={d.uid}>{d.full_name}</option>)}
           </select>
         </Field>

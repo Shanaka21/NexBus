@@ -3,14 +3,17 @@ import {
   View, Text, StyleSheet, TouchableOpacity, StatusBar, Alert, ActivityIndicator, ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { Stack, useRouter, useLocalSearchParams } from "expo-router";
+import { Stack, useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import MapView, { Marker, Polyline, BaseTiles, baseMapType, mapProvider } from "../../lib/maps";
 import { apiJson, jsonBody } from "../../lib/api";
 import { startSharing, stopSharing, type SharingMode } from "../../lib/driverTracking";
 import { clockTime, msAgo, stopLabel } from "../../lib/format";
 
+type Passenger = { booking_id: string; name: string; seat_numbers: number[]; seats: number; from: string; to: string; boarded: boolean };
+
 type Trip = {
+  passengers?: Passenger[];
   id: string; route_id: string; route_number: string; registration_no: string; status: string;
   scheduled_departure: number; delay_minutes: number; reservable_seats: number; available_seats: number;
   last_update_at?: number; last_latitude?: number | null; last_longitude?: number | null;
@@ -45,6 +48,9 @@ export default function DriverActiveTripScreen() {
       if (ok && Array.isArray(data)) setTrip(data.find((t: Trip) => t.id === id) || null);
     } catch { /* keep the last state */ } finally { setLoading(false); }
   }, [id]);
+
+  // coming back from the verify screen shows the new tick straight away
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   useEffect(() => {
     load();
@@ -140,6 +146,36 @@ export default function DriverActiveTripScreen() {
             )}
             {trip.delay_minutes >= 10 && <Text style={styles.late}>Running {trip.delay_minutes} min late</Text>}
           </View>
+
+          {trip.reservable_seats > 0 && trip.status !== "cancelled" && (
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>Passengers</Text>
+
+              {["scheduled", "running"].includes(trip.status) && (
+                <TouchableOpacity style={styles.verifyBtn} onPress={() => router.push({ pathname: "/driver/verify", params: { id: trip.id } } as any)}>
+                  <Ionicons name="key-outline" size={18} color="#fff" />
+                  <Text style={styles.verifyBtnText}>Verify passenger code</Text>
+                </TouchableOpacity>
+              )}
+
+              {!trip.passengers?.length ? (
+                <Text style={styles.sub}>No paid bookings on this trip yet.</Text>
+              ) : (
+                trip.passengers.map((pax) => (
+                  <View key={pax.booking_id} style={styles.paxRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.paxName}>{pax.name}</Text>
+                      <Text style={styles.sub}>{pax.from} → {pax.to}</Text>
+                    </View>
+                    <View style={styles.paxSeats}>
+                      <Text style={styles.paxSeatsText}>Seat {pax.seat_numbers.join(", ") || pax.seats}</Text>
+                    </View>
+                    <Ionicons name={pax.boarded ? "checkmark-circle" : "ellipse-outline"} size={20} color={pax.boarded ? "#4caf50" : "#ccc"} />
+                  </View>
+                ))
+              )}
+            </View>
+          )}
 
           {running && (
             <View style={styles.card}>
@@ -257,6 +293,13 @@ function SummaryStat({ icon, label, value }: { icon: string; label: string; valu
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f0f0f5" },
+  sectionTitle: { fontSize: 15, fontWeight: "700", color: "#1a1a4e", marginBottom: 10 },
+  verifyBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: "#1a3cff", borderRadius: 12, paddingVertical: 12, marginBottom: 12 },
+  verifyBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  paxRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10, borderTopWidth: 1, borderTopColor: "#f0f0f5" },
+  paxName: { fontSize: 14.5, fontWeight: "700", color: "#1a1a4e" },
+  paxSeats: { backgroundColor: "#f0f4ff", borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4 },
+  paxSeatsText: { fontSize: 12, fontWeight: "700", color: "#1a3cff" },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingTop: 54, paddingBottom: 20 },
   headerTitle: { fontSize: 20, fontWeight: "bold", color: "#fff" },
   scroll: { padding: 20, gap: 14 },

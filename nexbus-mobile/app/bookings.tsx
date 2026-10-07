@@ -34,6 +34,8 @@ type Booking = {
   payment_status: string;
   hold_expires_at: number | null;
   refund_required: boolean;
+  boarding_code?: string | null;
+  boarded_at?: number | null;
 };
 
 const statusColors: any = {
@@ -119,6 +121,7 @@ export default function BookingsScreen() {
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [now, setNow]             = useState(() => Date.now());
   const [liveBuses, setLiveBuses]   = useState<LiveBus[]>([]);
+  const [codeOpen, setCodeOpen]     = useState<string | null>(null); // booking whose boarding code is showing
 
   const fetchBookings = useCallback(async () => {
     try {
@@ -207,8 +210,15 @@ export default function BookingsScreen() {
     const seatText = item.seat_numbers?.length ? item.seat_numbers.map((n) => `${n}`) : [];
     const bus = item.status === "confirmed" ? busFor(item) : null;
     const busOffline = item.status === "confirmed" && !bus;
+    const canShowCode = item.status === "confirmed" && !!item.boarding_code;
+    const showCode = canShowCode && codeOpen === item.id;
     return (
-      <View style={[styles.bookingCard, { backgroundColor: p.card }]}>
+      <TouchableOpacity
+        activeOpacity={canShowCode ? 0.85 : 1}
+        disabled={!canShowCode}
+        onPress={() => setCodeOpen(showCode ? null : item.id)}
+        style={[styles.bookingCard, { backgroundColor: p.card }]}
+      >
         <View style={styles.cardHeader}>
           <View style={[styles.routeBadge, { backgroundColor: p.routeBadge }]}>
             <Ionicons name="bus" size={13} color="#1a3cff" />
@@ -271,6 +281,23 @@ export default function BookingsScreen() {
           </View>
         )}
 
+        {canShowCode && (
+          showCode ? (
+            <View style={styles.codeBox}>
+              <Text style={styles.codeLabel}>YOUR BOARDING CODE</Text>
+              <Text style={styles.codeValue}>{item.boarding_code}</Text>
+              <Text style={styles.codeHint}>
+                {item.boarded_at ? "The driver has verified you. Have a safe trip." : "Tell this code to the driver when you board."}
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.codeTap}>
+              <Ionicons name={item.boarded_at ? "checkmark-circle" : "key-outline"} size={15} color="#1a3cff" />
+              <Text style={styles.codeTapText}>{item.boarded_at ? "Verified by the driver" : "Tap to show your boarding code"}</Text>
+            </View>
+          )
+        )}
+
         {item.refund_required && (
           <View style={styles.holdBanner}>
             <Ionicons name="information-circle-outline" size={15} color="#e68900" />
@@ -316,7 +343,7 @@ export default function BookingsScreen() {
             </TouchableOpacity>
           </View>
         )}
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -516,6 +543,12 @@ const styles = StyleSheet.create({
   seatChipText:{ fontSize: 12, fontWeight: "700", color: "#1a3cff" },
 
   holdBanner: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#fff3e0", padding: 10, borderRadius: 10, marginBottom: 12 },
+  codeBox:    { alignItems: "center", backgroundColor: "#f0f4ff", borderRadius: 12, paddingVertical: 14, marginBottom: 12 },
+  codeLabel:  { fontSize: 11, fontWeight: "700", color: "#6a74a8", letterSpacing: 1 },
+  codeValue:  { fontSize: 38, fontWeight: "800", color: "#1a3cff", letterSpacing: 10, marginVertical: 4, paddingLeft: 10 },
+  codeHint:   { fontSize: 12, color: "#6a74a8" },
+  codeTap:    { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 12 },
+  codeTapText:{ fontSize: 12.5, color: "#1a3cff", fontWeight: "600" },
   holdText:   { flex: 1, fontSize: 12.5, color: "#a96400", fontWeight: "500" },
 
   busState:     { flexDirection: "row", alignItems: "center", gap: 8, padding: 10, borderRadius: 10, marginBottom: 12 },

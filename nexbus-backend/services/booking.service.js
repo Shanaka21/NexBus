@@ -10,8 +10,9 @@ const audit = require('./audit.service');
 
 const HOLD_MS = 10 * 60 * 1000;
 
-// Response shape: keeps the field names older clients already read (route, from, to, seats, fare, status)
-function formatBooking(id, b) {
+// Response shape: keeps the field names older clients already read (route, from, to, seats, fare, status).
+// The boarding code is for the passenger who owns the booking only, so it is added on request.
+function formatBooking(id, b, { withCode = false } = {}) {
   const status = b.status;
   const amount = b.fare_amount_lkr != null ? Number(b.fare_amount_lkr) : null;
   const scheduledDeparture = b.scheduled_departure != null ? Number(b.scheduled_departure) : null;
@@ -37,8 +38,19 @@ function formatBooking(id, b) {
     hold_expires_at: b.hold_expires_at != null ? Number(b.hold_expires_at) : null,
     scheduled_departure: scheduledDeparture,
     refund_required: !!b.refund_required,
+    boarded_at: b.boarded_at != null ? Number(b.boarded_at) : null,
+    ...(withCode ? { boarding_code: b.boarding_code || null } : {}),
     created_at: createdAt
   };
+}
+
+// A random 4-digit code that no live booking of this trip already uses
+function newBoardingCode(taken) {
+  for (let i = 0; i < 50; i++) {
+    const code = String(crypto.randomInt(0, 10000)).padStart(4, '0');
+    if (!taken.has(code)) return code;
+  }
+  throw new AppError(409, 'SEATS_UNAVAILABLE', 'Could not issue a boarding code. Please try again.');
 }
 
 async function createBooking(user, dto) {
@@ -92,6 +104,10 @@ async function createBooking(user, dto) {
         throw new AppError(409, 'BOARDING_PASSED', 'The bus has already passed your boarding stop');
       }
     }
+    const codesRes = await tx.query(
+      "SELECT boarding_code FROM bookings WHERE trip_id = $1 AND status IN ('pending_payment', 'confirmed')", [dto.trip_id]
+    );
+    const boardingCode = newBoardingCode(new Set(codesRes.rows.map((r) => r.boarding_code)));
     const seatCount = seatNumbers.length;
     if ((trip.available_seats || 0) < seatCount) {
       throw new AppError(409, 'SEATS_UNAVAILABLE', 'Not enough seats available');
@@ -105,17 +121,17 @@ async function createBooking(user, dto) {
       boarding_stop_id: dto.boarding_stop_id, alighting_stop_id: dto.alighting_stop_id,
       from_name: master.get(dto.boarding_stop_id)?.name || dto.boarding_stop_id,
       to_name: master.get(dto.alighting_stop_id)?.name || dto.alighting_stop_id,
-      seat_count: seatCount, seat_numbers: seatNumbers, fare_amount_lkr: amount, status: 'pending_payment', payment_status: 'unpaid',
+      seat_count: seatCount, seat_numbers: seatNumbers, boarding_code: boardingCode, fare_amount_lkr: amount, status: 'pending_payment', payment_status: 'unpaid',
       hold_expires_at: now + HOLD_MS, scheduled_departure: Number(trip.scheduled_departure), created_at: now
     };
     await tx.query('UPDATE trips SET available_seats = available_seats - $1 WHERE id = $2', [seatCount, dto.trip_id]);
     await tx.query(
       `INSERT INTO bookings (id, booking_reference, user_id, trip_id, route_id, route_number, vehicle_id, operator_id,
-         boarding_stop_id, alighting_stop_id, from_name, to_name, seat_count, seat_numbers, fare_amount_lkr, status, payment_status,
+         boarding_stop_id, alighting_stop_id, from_name, to_name, seat_count, seat_numbers, boarding_code, fare_amount_lkr, status, payment_status,
          hold_expires_at, scheduled_departure, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
       [row.id, row.booking_reference, row.user_id, row.trip_id, row.route_id, row.route_number, row.vehicle_id, row.operator_id,
-        row.boarding_stop_id, row.alighting_stop_id, row.from_name, row.to_name, row.seat_count, row.seat_numbers, row.fare_amount_lkr,
+        row.boarding_stop_id, row.alighting_stop_id, row.from_name, row.to_name, row.seat_count, row.seat_numbers, row.boarding_code, row.fare_amount_lkr,
         row.status, row.payment_status, row.hold_expires_at, row.scheduled_departure, row.created_at]
     );
     return row;
@@ -124,12 +140,12 @@ async function createBooking(user, dto) {
   cache.invalidate('active-trips');
   await audit.log({ userId: user.uid, action: 'BOOKING_CREATED', entity: 'bookings', entityId: bookingId,
     details: { trip_id: dto.trip_id, seats: booking.seat_count, seat_numbers: booking.seat_numbers } });
-  return formatBooking(bookingId, booking);
+  return formatBooking(bookingId, booking, { withCode: true });
 }
 
 async function listMine(user) {
   const { rows } = await pool.query('SELECT * FROM bookings WHERE user_id = $1 ORDER BY created_at DESC LIMIT 200', [user.uid]);
-  return rows.map(b => formatBooking(b.id, b));
+  return rows.map(b => formatBooking(b.id, b, { withCode: true }));
 }
 
 async function getBooking(user, id) {
@@ -139,7 +155,7 @@ async function getBooking(user, id) {
   const owner = b.user_id === user.uid;
   const operator = user.role === 'operator' && b.operator_id === user.operatorId;
   if (!owner && !operator) throw new AppError(404, 'BOOKING_NOT_FOUND', 'Booking not found');
-  return formatBooking(b.id, b);
+  return formatBooking(b.id, b, { withCode: owner });
 }
 
 async function cancelBooking(user, id) {

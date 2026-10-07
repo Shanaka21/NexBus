@@ -4,13 +4,13 @@ import { LIVE, label } from '../format'
 import { Badge, Button, Card, ErrorBox, Field, Modal, PageHeader, Spinner, Table, useLoad, useToast } from '../ui'
 
 const STATUS_TONE = { active: 'green', delayed: 'amber', emergency: 'red', inactive: 'gray' }
-const blank = { registration_no: '', route_id: '', seat_capacity: 54, reservable_seats: 0 }
+const blank = { registration_no: '', route_id: '', driver_id: '', seat_capacity: 54, reservable_seats: 0 }
 
-function VehicleForm({ vehicle, routes, onClose, onSaved }) {
+function VehicleForm({ vehicle, routes, drivers, onClose, onSaved }) {
   const toast = useToast()
   const editing = !!vehicle
   const [form, setForm] = useState(vehicle
-    ? { registration_no: vehicle.registration_no, route_id: vehicle.route_id, seat_capacity: vehicle.seat_capacity, reservable_seats: vehicle.reservable_seats }
+    ? { registration_no: vehicle.registration_no, route_id: vehicle.route_id, driver_id: vehicle.driver_id || '', seat_capacity: vehicle.seat_capacity, reservable_seats: vehicle.reservable_seats }
     : { ...blank, route_id: routes[0]?.id || '' })
   const [busy, setBusy] = useState(false)
   const [errors, setErrors] = useState({})
@@ -32,7 +32,7 @@ function VehicleForm({ vehicle, routes, onClose, onSaved }) {
     if (!validate()) return
     setBusy(true)
     const body = {
-      registration_no: form.registration_no.trim(), route_id: form.route_id,
+      registration_no: form.registration_no.trim(), route_id: form.route_id, driver_id: form.driver_id || null,
       seat_capacity: Number(form.seat_capacity), reservable_seats: Number(form.reservable_seats),
     }
     try {
@@ -60,6 +60,12 @@ function VehicleForm({ vehicle, routes, onClose, onSaved }) {
           {routes.map((r) => <option key={r.id} value={r.id}>{r.route_number} · {r.start_point} to {r.end_point}</option>)}
         </select>
       </Field>
+      <Field label="Assigned driver" hint="The driver sees only the trips scheduled on this bus">
+        <select className="input" value={form.driver_id} onChange={set('driver_id')}>
+          <option value="">No driver assigned</option>
+          {drivers.map((d) => <option key={d.uid} value={d.uid}>{d.full_name}</option>)}
+        </select>
+      </Field>
       <div className="form-grid">
         <Field label="Seat capacity" error={errors.seat_capacity}>
           <input className="input" type="number" min="1" max="80" value={form.seat_capacity} onChange={set('seat_capacity')} />
@@ -74,13 +80,14 @@ function VehicleForm({ vehicle, routes, onClose, onSaved }) {
 
 export default function Vehicles() {
   const { data, loading, error, reload } = useLoad(async () => {
-    const [vehicles, routes] = await Promise.all([api('/vehicles'), api('/routes')])
-    return { vehicles, routes }
+    const [vehicles, routes, drivers] = await Promise.all([api('/vehicles'), api('/routes'), api('/operator/drivers').catch(() => [])])
+    return { vehicles, routes, drivers }
   })
   const [form, setForm] = useState(null) // null | 'new' | vehicle
 
   if (loading && !data) return <Spinner />
   const routes = data?.routes || []
+  const drivers = data?.drivers || []
 
   return (
     <>
@@ -93,6 +100,7 @@ export default function Vehicles() {
           columns={[
             { key: 'reg', title: 'Registration', render: (v) => <strong>{v.registration_no}</strong> },
             { key: 'route', title: 'Route', render: (v) => v.route_number },
+            { key: 'driver', title: 'Driver', render: (v) => v.driver_name || <span className="cell-sub">Unassigned</span> },
             { key: 'seats', title: 'Seats', render: (v) => `${v.seat_capacity} (${v.reservable_seats} reservable)` },
             { key: 'status', title: 'Status', render: (v) => <Badge tone={STATUS_TONE[v.status] || 'gray'}>{label(v.status)}</Badge> },
             { key: 'live', title: 'Now', render: (v) => <Badge tone={LIVE[v.live_status]?.tone || 'gray'}>{LIVE[v.live_status]?.label || '-'}</Badge> },
@@ -104,6 +112,7 @@ export default function Vehicles() {
         <VehicleForm
           vehicle={form === 'new' ? null : form}
           routes={routes}
+          drivers={drivers}
           onClose={() => setForm(null)}
           onSaved={() => { setForm(null); reload() }}
         />

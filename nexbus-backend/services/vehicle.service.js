@@ -14,6 +14,8 @@ function format(id, v) {
     operator_id: v.operator_id || null,
     route_id: v.route_id || null,
     route_number: v.route_number,
+    driver_id: v.driver_id || null,
+    driver_name: v.driver_name || null,
     seat_capacity: v.seat_capacity || 0,
     capacity: v.seat_capacity || 0,
     reservable_seats: v.reservable_seats || 0,
@@ -28,11 +30,14 @@ function format(id, v) {
   };
 }
 
+const FLEET_SELECT = `SELECT v.*, r.route_number, u.full_name AS driver_name FROM vehicles v
+  LEFT JOIN routes r ON r.id = v.route_id LEFT JOIN users u ON u.id = v.driver_id`;
+
 // Fleet list for operators (own company) and administrators (all)
 async function listFleet(user) {
   const { rows } = user.role === 'operator'
-    ? await pool.query('SELECT v.*, r.route_number FROM vehicles v LEFT JOIN routes r ON r.id = v.route_id WHERE v.operator_id = $1', [user.operatorId])
-    : await pool.query('SELECT v.*, r.route_number FROM vehicles v LEFT JOIN routes r ON r.id = v.route_id');
+    ? await pool.query(`${FLEET_SELECT} WHERE v.operator_id = $1`, [user.operatorId])
+    : await pool.query(FLEET_SELECT);
   return rows.map((r) => format(r.id, r));
 }
 
@@ -118,20 +123,43 @@ async function ownVehicle(user, id) {
   return rows[0];
 }
 
+// A bus can only be given to an active driver account of the same company, and a driver drives one bus.
+async function checkDriver(user, driverId, vehicleId) {
+  const { rows } = await pool.query('SELECT id, role, operator_id, status FROM users WHERE id = $1', [driverId]);
+  const driver = rows[0];
+  if (!driver || driver.role !== 'driver' || driver.operator_id !== user.operatorId || driver.status === 'disabled') {
+    throw new AppError(400, 'DRIVER_INVALID', 'Driver must be an active driver account of your company');
+  }
+  const other = await pool.query('SELECT id FROM vehicles WHERE driver_id = $1 AND id <> $2', [driverId, vehicleId]);
+  if (other.rows[0]) throw new AppError(409, 'DRIVER_ALREADY_ASSIGNED', `This driver is already assigned to bus ${other.rows[0].id}`);
+}
+
+// Trips that have not started follow the bus: they move to the newly assigned driver (or become unassigned),
+// so the driver app, which lists a driver's own trips, shows exactly the schedules of their bus.
+async function reassignOpenTrips(vehicleId, driverId) {
+  let name = null;
+  if (driverId) name = (await pool.query('SELECT full_name FROM users WHERE id = $1', [driverId])).rows[0]?.full_name || '';
+  await pool.query("UPDATE trips SET driver_id = $1, driver_name = $2 WHERE vehicle_id = $3 AND status = 'scheduled'", [driverId, name, vehicleId]);
+  cache.invalidate();
+}
+
 async function createVehicle(user, dto) {
   const route = await routeService.getRoute(dto.route_id);
+  const driverId = dto.driver_id || null;
+  if (driverId) await checkDriver(user, driverId, dto.registration_no);
   const now = Date.now();
   try {
     await pool.query(
-      `INSERT INTO vehicles (id, operator_id, route_id, seat_capacity, reservable_seats, booked_seats, status, delay_minutes, created_at)
-       VALUES ($1, $2, $3, $4, $5, 0, 'active', 0, $6)`,
-      [dto.registration_no, user.operatorId, dto.route_id, dto.seat_capacity, dto.reservable_seats, now]
+      `INSERT INTO vehicles (id, operator_id, route_id, driver_id, seat_capacity, reservable_seats, booked_seats, status, delay_minutes, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 0, 'active', 0, $7)`,
+      [dto.registration_no, user.operatorId, dto.route_id, driverId, dto.seat_capacity, dto.reservable_seats, now]
     );
   } catch (err) {
     if (err.code === '23505') throw new AppError(409, 'REGISTRATION_IN_USE', 'A vehicle with this registration number already exists');
     throw err;
   }
-  return format(dto.registration_no, { operator_id: user.operatorId, route_id: dto.route_id, route_number: route.route_number, seat_capacity: dto.seat_capacity, reservable_seats: dto.reservable_seats, status: 'active', delay_minutes: 0 });
+  const created = await pool.query(`${FLEET_SELECT} WHERE v.id = $1`, [dto.registration_no]);
+  return format(dto.registration_no, created.rows[0] || { operator_id: user.operatorId, route_id: dto.route_id, route_number: route.route_number, seat_capacity: dto.seat_capacity, reservable_seats: dto.reservable_seats, status: 'active', delay_minutes: 0 });
 }
 
 async function updateVehicle(user, id, dto) {
@@ -140,6 +168,8 @@ async function updateVehicle(user, id, dto) {
   const capacity = dto.seat_capacity || data.seat_capacity;
   const reservable = dto.reservable_seats ?? data.reservable_seats ?? 0;
   if (reservable > capacity) throw new AppError(400, 'VALIDATION_ERROR', 'Reservable seats cannot exceed seat capacity');
+  const driverChanged = dto.driver_id !== undefined && (dto.driver_id || null) !== data.driver_id;
+  if (driverChanged && dto.driver_id) await checkDriver(user, dto.driver_id, id);
 
   const sets = [];
   const values = [];
@@ -148,11 +178,13 @@ async function updateVehicle(user, id, dto) {
   if (dto.seat_capacity) add('seat_capacity', dto.seat_capacity);
   if (dto.reservable_seats !== undefined) add('reservable_seats', dto.reservable_seats);
   if (dto.status) add('status', dto.status);
+  if (driverChanged) add('driver_id', dto.driver_id || null);
   if (sets.length) {
     values.push(id);
     await pool.query(`UPDATE vehicles SET ${sets.join(', ')} WHERE id = $${values.length}`, values);
   }
-  const { rows } = await pool.query('SELECT v.*, r.route_number FROM vehicles v LEFT JOIN routes r ON r.id = v.route_id WHERE v.id = $1', [id]);
+  if (driverChanged) await reassignOpenTrips(id, dto.driver_id || null);
+  const { rows } = await pool.query(`${FLEET_SELECT} WHERE v.id = $1`, [id]);
   return format(id, rows[0]);
 }
 

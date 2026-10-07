@@ -229,6 +229,8 @@ async function seed() {
   const driverOf = {};
   for (const [email, reg] of Object.entries(DRIVER_VEHICLE)) driverOf[reg] = { id: uids[email], name: ACCOUNTS.find((a) => a.email === email).full_name };
 
+  for (const [reg, d] of Object.entries(driverOf)) await pool.query('UPDATE vehicles SET driver_id = $1 WHERE id = $2', [d.id, reg]);
+
   console.log('Seeding trips...');
   const today = colomboMidnight(now);
   const tripRow = (id, r, vehicle, scheduled, extra = {}) => {
