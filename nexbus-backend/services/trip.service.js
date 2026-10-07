@@ -5,6 +5,7 @@ const notify = require('./notify.service');
 const { colomboDate } = require('../utils/format');
 const cache = require('./cache');
 const eta = require('./eta.service');
+const bookingService = require('./booking.service');
 
 const ALLOWED = { // current status -> allowed next status
   scheduled: ['running', 'cancelled'],
@@ -150,6 +151,7 @@ async function getAvailability(tripId) {
 // Which seat numbers (1..reservable_seats) are currently held by an active booking on this trip.
 // A snapshot for display only: the actual grab-a-seat check happens inside createBooking's transaction.
 async function seatMap(tripId) {
+  await bookingService.sweepHolds();
   const { rows } = await pool.query('SELECT reservable_seats FROM trips WHERE id = $1', [tripId]);
   if (!rows[0]) throw new AppError(404, 'TRIP_NOT_FOUND', 'Trip not found');
   const takenRes = await pool.query(

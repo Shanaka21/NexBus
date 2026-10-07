@@ -54,6 +54,7 @@ function newBoardingCode(taken) {
 }
 
 async function createBooking(user, dto) {
+  await sweepHolds();
   const master = await stopService.allStops();
   const bookingId = crypto.randomUUID();
 
@@ -144,6 +145,7 @@ async function createBooking(user, dto) {
 }
 
 async function listMine(user) {
+  await sweepHolds();
   const { rows } = await pool.query('SELECT * FROM bookings WHERE user_id = $1 ORDER BY created_at DESC LIMIT 200', [user.uid]);
   return rows.map(b => formatBooking(b.id, b, { withCode: true }));
 }
@@ -195,6 +197,15 @@ async function cancelBooking(user, id) {
   return { message: 'Booking cancelled', refund_required: result.refund };
 }
 
+// Serverless hosts (Vercel's free plan) cannot run a job every minute, so expired holds are also released
+// when bookings or seat maps are used, at most once every 20 seconds per instance.
+let lastSweep = 0;
+async function sweepHolds() {
+  if (Date.now() - lastSweep < 20000) return;
+  lastSweep = Date.now();
+  try { await expireHolds(); } catch (err) { console.error('hold sweep failed:', err.message); }
+}
+
 // Releases unpaid seat holds. Called every minute by Cloud Scheduler (or the local timer).
 async function expireHolds() {
   const { rows } = await pool.query(
@@ -228,4 +239,4 @@ async function expireHolds() {
   return expired;
 }
 
-module.exports = { formatBooking, createBooking, listMine, getBooking, cancelBooking, expireHolds, HOLD_MS };
+module.exports = { formatBooking, createBooking, listMine, getBooking, cancelBooking, expireHolds, sweepHolds, HOLD_MS };
