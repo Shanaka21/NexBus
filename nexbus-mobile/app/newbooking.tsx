@@ -1,13 +1,14 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  StatusBar, ScrollView, Alert, ActivityIndicator,
+  StatusBar, ScrollView, ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter, useLocalSearchParams } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { apiJson, jsonBody } from "../lib/api";
 import { stopLabel, lkr, dayTime } from "../lib/format";
+import { showAlert } from "../lib/dialog";
 
 type Stop = { stopId: string; name: string; nameSi: string; sequenceNo: number };
 type RouteItem = {
@@ -20,6 +21,7 @@ type Trip = {
 };
 type SeatMap = { trip_id: string; reservable_seats: number; taken: number[] };
 
+const CUTOFF_MS = 15 * 60 * 1000; // booking closes 15 minutes before departure
 const TYPE_LABEL: Record<string, string> = { normal: "Ordinary", semi_luxury: "Semi-Luxury", luxury: "Luxury", expressway: "Expressway" };
 const duration = (min: number) => (min >= 60 ? `${Math.floor(min / 60)} h ${min % 60 ? `${min % 60} m` : ""}`.trim() : `${min} m`);
 
@@ -33,6 +35,7 @@ export default function NewBookingScreen() {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loadingTrips, setLoadingTrips] = useState(false);
   const [showAllTrips, setShowAllTrips] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
   const [boardingId, setBoardingId] = useState<string | null>(null);
   const [alightingId, setAlightingId] = useState<string | null>(null);
@@ -40,6 +43,25 @@ export default function NewBookingScreen() {
   const [seatMap, setSeatMap] = useState<SeatMap | null>(null);
   const [loadingSeats, setLoadingSeats] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // Picking a route or trip clears everything that belonged to the previous choice
+  const selectTrip = useCallback((trip: Trip | null) => {
+    setSelectedTrip(trip);
+    setSelectedSeats([]);
+    setSeatMap(null);
+    setLoadingSeats(!!trip);
+  }, []);
+
+  const selectRoute = useCallback((route: RouteItem) => {
+    const ids = route.stops.map((s) => s.stopId);
+    setSelectedRoute(route);
+    setShowAllTrips(false);
+    setTrips([]);
+    setLoadingTrips(true);
+    selectTrip(null);
+    setBoardingId(params.from && ids.includes(params.from) ? params.from : ids[0]);
+    setAlightingId(params.to && ids.includes(params.to) ? params.to : ids[ids.length - 1]);
+  }, [params.from, params.to, selectTrip]);
 
   useEffect(() => {
     apiJson("/routes")
@@ -49,48 +71,47 @@ export default function NewBookingScreen() {
         setRoutes(list);
         if (params.route_id) {
           const preset = list.find((r) => r.id === params.route_id);
-          if (preset) setSelectedRoute(preset);
+          if (preset) selectRoute(preset);
         }
       })
-      .catch(() => Alert.alert("Error", "Could not load routes."))
+      .catch(() => showAlert("Error", "Could not load routes."))
       .finally(() => setLoadingRoutes(false));
-  }, [params.route_id]);
+  }, [params.route_id, selectRoute]);
+
+  // A trip moves from open to closed as the clock passes 15 minutes before its departure
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Upcoming trips that take reservations on the selected route
   useEffect(() => {
     if (!selectedRoute) return;
-    setLoadingTrips(true);
-    setShowAllTrips(false);
-    setSelectedTrip(null);
+    let cancelled = false;
     apiJson(`/trips?route_id=${selectedRoute.id}`)
       .then(({ ok, data }) => {
+        if (cancelled) return;
         if (!ok || !Array.isArray(data)) { setTrips([]); return; }
-        // booking closes 15 minutes before departure (the API enforces the same rule)
-        const open = (data as Trip[]).filter(
-          (t) => t.reservable_seats > 0 && t.scheduled_departure - Date.now() >= 15 * 60 * 1000
-        );
+        // trips that have not left yet; the ones leaving within 15 minutes are listed as closed (the API enforces the same rule)
+        const open = (data as Trip[]).filter((t) => t.reservable_seats > 0 && t.scheduled_departure > Date.now());
         setTrips(open);
         const preset = params.trip_id ? open.find((t) => t.id === params.trip_id) : null;
-        if (preset) setSelectedTrip(preset);
+        if (preset) selectTrip(preset);
       })
-      .catch(() => setTrips([]))
-      .finally(() => setLoadingTrips(false));
-
-    const ids = selectedRoute.stops.map((s) => s.stopId);
-    setBoardingId(params.from && ids.includes(params.from) ? params.from : ids[0]);
-    setAlightingId(params.to && ids.includes(params.to) ? params.to : ids[ids.length - 1]);
-  }, [selectedRoute, params.trip_id, params.from, params.to]);
+      .catch(() => { if (!cancelled) setTrips([]); })
+      .finally(() => { if (!cancelled) setLoadingTrips(false); });
+    return () => { cancelled = true; };
+  }, [selectedRoute, params.trip_id, selectTrip]);
 
   // Which seats are already taken on the selected trip, so the picker can grey them out
   useEffect(() => {
-    setSelectedSeats([]);
-    setSeatMap(null);
     if (!selectedTrip) return;
-    setLoadingSeats(true);
+    let cancelled = false;
     apiJson(`/trips/${selectedTrip.id}/seats`)
-      .then(({ ok, data }) => { if (ok) setSeatMap(data); })
+      .then(({ ok, data }) => { if (!cancelled && ok) setSeatMap(data); })
       .catch(() => {})
-      .finally(() => setLoadingSeats(false));
+      .finally(() => { if (!cancelled) setLoadingSeats(false); });
+    return () => { cancelled = true; };
   }, [selectedTrip]);
 
   const stops = selectedRoute?.stops ?? [];
@@ -132,19 +153,19 @@ export default function NewBookingScreen() {
       if (ok && data?.id) {
         router.replace({ pathname: "/payment", params: { id: data.id } } as any);
       } else if (status === 409 && data?.code === "SEATS_TAKEN") {
-        Alert.alert("Seat already taken", data?.error || "Someone just took one of your selected seats. Please pick again.");
+        showAlert("Seat already taken", data?.error || "Someone just took one of your selected seats. Please pick again.");
         setSelectedSeats([]);
         refreshSeatMap();
       } else if (status === 409 && data?.code === "SEATS_UNAVAILABLE") {
-        Alert.alert("Not enough seats", "Someone just took those seats. Plan Trip can suggest other buses.", [
+        showAlert("Not enough seats", "Someone just took those seats. Plan Trip can suggest other buses.", [
           { text: "Close", style: "cancel" },
           { text: "Plan Trip", onPress: () => router.push({ pathname: "/smartsuggestions", params: { from: boardingId, to: alightingId, need_seat: "1" } } as any) },
         ]);
       } else {
-        Alert.alert("Booking failed", data?.error || "Please try again.");
+        showAlert("Booking failed", data?.error || "Please try again.");
       }
     } catch {
-      Alert.alert("Error", "Could not connect to server.");
+      showAlert("Error", "Could not connect to server.");
     } finally {
       setSubmitting(false);
     }
@@ -173,11 +194,11 @@ export default function NewBookingScreen() {
         {loadingRoutes && <ActivityIndicator color="#1a3cff" style={{ marginVertical: 16 }} />}
         {grouped.intercity.length > 0 && <Text style={styles.groupLabel}>INTERCITY</Text>}
         {grouped.intercity.map((r) => (
-          <RouteCard key={r.id} route={r} selected={selectedRoute?.id === r.id} onPress={() => setSelectedRoute(r)} />
+          <RouteCard key={r.id} route={r} selected={selectedRoute?.id === r.id} onPress={() => selectRoute(r)} />
         ))}
         {grouped.urban.length > 0 && <Text style={styles.groupLabel}>URBAN / SUBURBAN</Text>}
         {grouped.urban.map((r) => (
-          <RouteCard key={r.id} route={r} selected={selectedRoute?.id === r.id} onPress={() => setSelectedRoute(r)} />
+          <RouteCard key={r.id} route={r} selected={selectedRoute?.id === r.id} onPress={() => selectRoute(r)} />
         ))}
 
         {selectedRoute && (
@@ -188,15 +209,24 @@ export default function NewBookingScreen() {
               <Text style={styles.hint}>No trips are open for booking on this route right now. Booking closes 15 minutes before departure.</Text>
             )}
             {/* a frequent route has hundreds of departures: show the next few first */}
+            {trips.some((t) => t.scheduled_departure - now < CUTOFF_MS) && (
+              <View style={styles.closedNotice}>
+                <Ionicons name="information-circle-outline" size={18} color="#b26a00" />
+                <Text style={styles.closedNoticeText}>
+                  Seats can be booked only up to 15 minutes before the bus leaves. Trips leaving sooner can no longer be booked.
+                </Text>
+              </View>
+            )}
             {(showAllTrips ? trips : trips.slice(0, 12)).map((t) => {
-              const full = t.available_seats === 0;
+              const closed = t.scheduled_departure - now < CUTOFF_MS;
+              const full = !closed && t.available_seats === 0;
               const active = selectedTrip?.id === t.id;
               return (
                 <TouchableOpacity
                   key={t.id}
-                  disabled={full}
-                  style={[styles.tripCard, active && styles.routeCardActive, full && { opacity: 0.5 }]}
-                  onPress={() => setSelectedTrip(t)}
+                  disabled={full || closed}
+                  style={[styles.tripCard, active && styles.routeCardActive, (full || closed) && { opacity: 0.5 }]}
+                  onPress={() => selectTrip(t)}
                 >
                   <View style={{ flex: 1 }}>
                     <Text style={styles.tripTime}>{t.status === "running" ? "On the way" : dayTime(t.scheduled_departure)}</Text>
@@ -204,9 +234,9 @@ export default function NewBookingScreen() {
                       Bus {t.registration_no}{t.delay_minutes >= 10 ? ` · ${t.delay_minutes} min late` : ""}
                     </Text>
                   </View>
-                  <View style={[styles.seatPill, full && { backgroundColor: "#ffebee" }]}>
-                    <Text style={[styles.seatPillText, full && { color: "#f44336" }]}>
-                      {full ? "FULL" : `${t.available_seats} / ${t.reservable_seats} seats`}
+                  <View style={[styles.seatPill, (full || closed) && { backgroundColor: "#ffebee" }]}>
+                    <Text style={[styles.seatPillText, (full || closed) && { color: "#f44336" }]}>
+                      {closed ? "BOOKING CLOSED" : full ? "FULL" : `${t.available_seats} / ${t.reservable_seats} seats`}
                     </Text>
                   </View>
                 </TouchableOpacity>
@@ -445,6 +475,8 @@ const styles = StyleSheet.create({
   },
   tripTime: { fontSize: 15, fontWeight: "700", color: "#1a1a4e", marginBottom: 2 },
   seatPill: { backgroundColor: "#e8f5e9", borderRadius: 14, paddingHorizontal: 10, paddingVertical: 4 },
+  closedNotice: { flexDirection: "row", gap: 8, backgroundColor: "#fff4e0", borderRadius: 10, padding: 10, marginBottom: 10, alignItems: "flex-start" },
+  closedNoticeText: { flex: 1, fontSize: 12, color: "#8a5200", lineHeight: 17 },
   seatPillText: { fontSize: 12, fontWeight: "700", color: "#4caf50" },
 
   timeGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 8 },
