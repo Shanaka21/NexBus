@@ -41,7 +41,21 @@ const STOPS = [
   ['giriulla', 'Giriulla', 'ගිරිඋල්ල', 7.3299, 80.1225],
   ['alawwa', 'Alawwa', 'අලව්ව', 7.2940, 80.2392],
   ['polgahawela', 'Polgahawela', 'පොල්ගහවෙල', 7.3353, 80.3002],
-  ['kurunegala', 'Kurunegala', 'කුරුණෑගල', 7.4870, 80.3649]
+  ['kurunagala', 'Kurunegala', 'කුරුණෑගල', 7.4870, 80.3649],
+  // stops of the 143, 505 and 06 routes (positions from OpenStreetMap; Wallampitiya, Kosgas Junction and Balummahara are estimates)
+  ['Welivita', 'Welivita', 'වැලිවිට', 6.9387, 79.9613],
+  ['Angoda', 'Angoda', 'අංගොඩ', 6.9360, 79.9257],
+  ['Wallampitiya', 'Wallampitiya', 'වල්ලම්පිටිය', 6.9560, 79.9030],
+  ['Orugodawatta', 'Orugodawatta', 'ඔරුගොඩවත්ත', 6.9484, 79.8887],
+  ['Kosgas Junction', 'Kosgas Junction', 'කොස්ගස් හංදිය', 6.9440, 79.8790],
+  ['Armour Street', 'Armour Street', 'ආමර් වීදිය', 6.9418, 79.8649],
+  ['nawathalwatta junction', 'Nawathalwatta Junction', 'නවතල්වත්ත හංදිය', 7.2888, 80.2049],
+  ['kiribathgoda', 'Kiribathgoda', 'කිරිබත්ගොඩ', 6.9782, 79.9270],
+  ['balummahara', 'Balummahara', 'බලුම්මහර', 7.0450, 79.9980],
+  ['pasyala', 'Pasyala', 'පස්යාල', 7.1684, 80.1242],
+  ['wewaldeniya', 'Wewaldeniya', 'වේවල්දෙණිය', 7.2022, 80.1528],
+  ['ambepussa', 'Ambepussa', 'අඹේපුස්ස', 7.2421, 80.2110],
+  ['pothuhera', 'Pothuhera', 'පොතුහැර', 7.4198, 80.3282]
 ];
 
 // Timetable: a bus leaves every `headway` minutes from 05:00 until 22:00 (the last departure), from both ends of a route.
