@@ -53,11 +53,11 @@ const DAYS_AHEAD = 3; // today and the next two days
 
 const ROUTES = [
   { id: 'r177', number: '177', type: 'normal', fare: 70, minutes: 60, headway: 10, stops: ['kaduwela', 'malabe', 'battaramulla', 'rajagiriya', 'borella', 'kollupitiya'] },
-  { id: 'r143', number: '143', type: 'normal', fare: 75, minutes: 65, headway: 5, stops: ['kaduwela', 'malabe', 'battaramulla', 'rajagiriya', 'borella', 'maradana', 'pettah'] },
+  { id: 'r143', number: '143', type: 'normal', fare: 75, minutes: 75, headway: 5, stops: ['kaduwela', 'Welivita', 'Angoda', 'Wallampitiya', 'Orugodawatta', 'Kosgas Junction', 'Armour Street', 'Pettah'] },
   { id: 'r190', number: '190', type: 'normal', fare: 100, minutes: 100, headway: 15, stops: ['meegoda', 'athurugiriya', 'malabe', 'battaramulla', 'rajagiriya', 'borella', 'maradana', 'pettah'] },
-  { id: 'r505', number: '505', type: 'normal', fare: 50, minutes: 30, headway: 20, stops: ['alawwa', 'giriulla'] },
-  { id: 'r017', number: '17', type: 'semi_luxury', fare: 520, minutes: 330, headway: 30, stops: ['panadura', 'moratuwa', 'mount_lavinia', 'dehiwala', 'nugegoda', 'rajagiriya', 'battaramulla', 'malabe', 'kaduwela', 'weliweriya', 'yakkala', 'nittambuwa', 'warakapola', 'kegalle', 'peradeniya', 'kandy'] },
-  { id: 'r005', number: '05', type: 'semi_luxury', fare: 350, minutes: 200, headway: 30, stops: ['fort', 'pettah', 'kadawatha', 'nittambuwa', 'warakapola', 'alawwa', 'polgahawela', 'kurunegala'] }
+  { id: 'r505', number: '505', type: 'normal', fare: 50, minutes: 40, headway: 20, stops: ['alawwa', 'nawathalwatta junction','boyawalana','paranagama','maharagama junction','giriulla'] },
+  { id: 'r017', number: '17', type: 'semi_luxury', fare: 520, minutes: 260, headway: 30, stops: ['panadura', 'moratuwa', 'mount_lavinia', 'dehiwala', 'nugegoda', 'rajagiriya', 'battaramulla', 'malabe', 'kaduwela', 'weliweriya', 'yakkala', 'nittambuwa', 'warakapola', 'kegalle', 'peradeniya', 'kandy'] },
+  { id: 'r006', number: '06', type: 'semi_luxury', fare: 350, minutes: 180, headway: 30, stops: ['pettah', 'kiribathgoda', 'balummahara', 'yakkala','nittambuwa', 'pasyala', 'wewaldeniya', 'warakapola', 'ambepussa','alawwa','polgahawela','pothuhera','kurunagala'] }
 ];
 
 // every route in both directions: r177 (Kaduwela - Kollupitiya) and r177r (Kollupitiya - Kaduwela)
