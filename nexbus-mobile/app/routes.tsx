@@ -100,7 +100,10 @@ export default function RoutesScreen() {
     try {
       const { ok, data } = await apiJson("/buses");
       if (!ok || !Array.isArray(data)) return;
-      setBuses(data.map((item: any): Bus => ({
+      // buses whose scheduled departure time has already passed are not shown
+      const upcoming = data.filter((item: any) => !item.departed
+        && !(item.trip_status === "scheduled" && item.departure_at && item.departure_at < Date.now()));
+      setBuses(upcoming.map((item: any): Bus => ({
         id:          item.id,
         route:       item.route_number,
         destination: item.end_point   || item.route_number,

@@ -53,8 +53,13 @@ async function buildPublicBuses() {
     routeService.allRoutes({ includeInactive: true })
   ]);
   const routeMap = Object.fromEntries(routes.map(r => [r.id, r]));
+  // A scheduled trip whose departure time has passed is over for passengers: the bus shows its next trip instead
+  const now = Date.now();
+  const isPast = (t) => t.status === 'scheduled' && Number(t.scheduled_departure) < now;
+  const departedVehicles = new Set(activeTrips.filter(isPast).map(t => t.vehicle_id));
   const tripByVehicle = {};
   activeTrips
+    .filter(t => !isPast(t))
     .slice()
     .sort((a, b) => (a.status === 'running' ? -1 : 1) - (b.status === 'running' ? -1 : 1) || a.scheduled_departure - b.scheduled_departure)
     .forEach(t => { if (!tripByVehicle[t.vehicle_id]) tripByVehicle[t.vehicle_id] = t; });
@@ -82,6 +87,8 @@ async function buildPublicBuses() {
       trip_id: trip ? trip.id : null,
       route_id: v.route_id || null,
       trip_status: trip ? trip.status : null,
+      // true when the vehicle's only trips today have already passed their departure time
+      departed: !trip && departedVehicles.has(d.id),
       departure_at: trip && trip.scheduled_departure ? Number(trip.scheduled_departure) : null
     };
   });
