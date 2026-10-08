@@ -8,7 +8,14 @@ const errorHandler = require('./middleware/errorHandler');
 const app = express();
 app.set('trust proxy', 1); // behind Cloud Run / a reverse proxy
 app.use(helmet());
-app.use(cors({ origin: process.env.DASHBOARD_ORIGIN ? process.env.DASHBOARD_ORIGIN.split(',') : true }));
+// Browsers may call the API from the origins in DASHBOARD_ORIGIN (comma separated) and from localhost on any
+// port, which is where the dashboard (:5173) and the Expo web app (:8081) run during development.
+// Without DASHBOARD_ORIGIN every origin is allowed. Requests with no Origin (the phone app) are not affected by CORS.
+const allowedOrigins = (process.env.DASHBOARD_ORIGIN || '').split(',').map((s) => s.trim()).filter(Boolean);
+const isLocalOrigin = (origin) => /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+app.use(cors({
+  origin: (origin, callback) => callback(null, !origin || !allowedOrigins.length || allowedOrigins.includes(origin) || isLocalOrigin(origin))
+}));
 // image uploads are base64 JSON with their own, larger limit (see middleware/imageBody.js), parsed after sign-in and rate limiting
 const IMAGE_ROUTE = /^(\/api)?\/(uploads\/|users\/me\/photo)/;
 const smallJson = express.json({ limit: '50kb' });
