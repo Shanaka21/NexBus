@@ -42,8 +42,11 @@ export function refreshSession() {
 
 // JSON request to the NexBus API with the user's token. Throws ApiError for HTTP errors.
 export async function api(path, { method = 'GET', body } = {}) {
+  // no-store: always ask the server. A response cached for another localhost port (e.g. the mobile web app on :8081)
+  // carries that port's CORS header and would be reused here, which the browser then blocks.
   const run = () => fetch(`${API}${path}`, {
     method,
+    cache: 'no-store',
     headers: {
       'Content-Type': 'application/json',
       ...(session.idToken ? { Authorization: `Bearer ${session.idToken}` } : {}),
