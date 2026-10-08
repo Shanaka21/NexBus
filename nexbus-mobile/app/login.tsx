@@ -77,8 +77,8 @@ export default function LoginScreen() {
 
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
     webClientId: GOOGLE_WEB_CLIENT_ID,
-    // The hook throws on Android without an Android client id; replace this with the one created for lk.nexbus.mobile
-    androidClientId: GOOGLE_WEB_CLIENT_ID,
+    // Android OAuth client for lk.nexbus.mobile, tied to the EAS keystore's SHA-1
+    androidClientId: "188813305489-jsj01rtu94rsuj0283fneoglf67qv0e3.apps.googleusercontent.com",
     iosClientId: "188813305489-nh13sfaubns6j74ggju7rn4lrt385nj7.apps.googleusercontent.com",
   });
 
