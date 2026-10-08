@@ -183,7 +183,7 @@ export default function WalletScreen() {
               <Text style={styles.welcomeTitle}>Add a card to start</Text>
               <Text style={styles.welcomeText}>
                 Add the card you will use to top up your wallet. Only the card type and the last 4 digits are kept, and the
-                card is charged securely on PayHere's page, where you enter your CVV.
+                card is charged securely on PayHere&apos;s page, where you enter your CVV.
               </Text>
             </View>
           )}
@@ -305,7 +305,7 @@ export default function WalletScreen() {
                 <Text style={styles.payText}>{busy ? "Processing…" : "Top up with PayHere"}</Text>
               </LinearGradient>
             </TouchableOpacity>
-            <Text style={styles.note}>You pay on PayHere's secure page. NexBus never sees your card details.</Text>
+            <Text style={styles.note}>You pay on PayHere&apos;s secure page. NexBus never sees your card details.</Text>
           </View>
           </>
           )}
