@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "nexbusmobile",
+    "scheme": ["nexbusmobile", "lk.nexbus.mobile"],
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
