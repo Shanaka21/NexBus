@@ -145,7 +145,7 @@ Validation per fix, in order: trip exists, is **assigned to this driver** and is
 
 **Delay alerts** fire only when the delay *crosses* 10 minutes (previous delay < 10 and new delay ≥ 10), so passengers aren't spammed every 3 seconds. An operator's `emergency` flag is never overwritten by the tracker.
 
-*Question: why 3 seconds?* Smooth map movement versus battery and database load; `FIX_INTERVAL_MS` is one constant. *Why store `recent_fixes` as JSONB rather than query `location_logs`?* One row read instead of an aggregate query on a hot path.
+*Question: why 1 second?* Smooth map movement versus battery and database load; `FIX_INTERVAL_MS` is one constant. *Why store `recent_fixes` as JSONB rather than query `location_logs`?* One row read instead of an aggregate query on a hot path.
 
 ### 5.3 Seat booking without overselling
 **File:** [booking.service.js](nexbus-backend/services/booking.service.js), `createBooking`.
@@ -411,7 +411,7 @@ I have not seen your thesis, so write these in your own words and rehearse them:
 | Recommend score | `eta + 0.5·delay − 3 (seat bonus)`, top 3 |
 | Planner | direct, 1 change, 2 changes (only if nothing simpler); +20 min per change |
 | Assistant | 7 s timeout, 8 km max to the nearest stop |
-| Live cache | 5 s (`LIVE_CACHE_TTL_MS`) |
+| Live cache | 1 s (`LIVE_CACHE_TTL_MS`) |
 | Location log retention | 30 days |
 | Seed | 6 routes x 2 directions, 27 stops, 1 operator, 4 demo accounts |
 | Demo logins | demo@nexbus.lk, driver@nexbus.lk, operator@nexbus.lk, admin@nexbus.lk (passwords in the README) |

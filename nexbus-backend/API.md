@@ -27,7 +27,7 @@ Other scripts: `npm test` (runs against the same Postgres database, truncating t
 | `API_BASE_URL` | Public HTTPS address of this API. PayHere posts to `API_BASE_URL/payments/notify` |
 | `INTERNAL_JOB_TOKEN` | Shared secret for Cloud Scheduler calls to `/internal/*` |
 | `ENABLE_JOBS` | `false` on Cloud Run: use Cloud Scheduler instead of the built-in timers |
-| `LIVE_CACHE_TTL_MS` | How long live results are shared between clients (default 5000) |
+| `LIVE_CACHE_TTL_MS` | How long live results are shared between clients (default 1000) |
 
 ## Authentication and roles
 

@@ -68,7 +68,7 @@ export default function MapScreen() {
   const [showFilters, setShowFilters] = useState(false);
   const [detail, setDetail] = useState<TripLive | null>(null);
 
-  // Live positions are polled from the API every 5 seconds (paused while the app is in the background).
+  // Live positions are polled from the API every 2 seconds (paused while the app is in the background).
   useEffect(() => {
     let stopped = false;
     const load = async () => {
@@ -87,7 +87,7 @@ export default function MapScreen() {
       if (!stopped) setLoading(false);
     };
     load();
-    const poll = setInterval(load, 5000);
+    const poll = setInterval(load, 2000);
     return () => { stopped = true; clearInterval(poll); };
   }, []);
 

@@ -5,7 +5,7 @@ export type FixInfo = { status: number; at: number };
 export type SharingMode = "background" | "foreground";
 
 // How often the driver's phone sends a position while a trip is running
-export const FIX_INTERVAL_MS = 3000;
+export const FIX_INTERVAL_MS = 1000;
 
 // Sends one GPS fix to the API exactly as the design specifies (lat, lng, speed, heading, accuracy)
 export async function postFix(tripId: string, loc: LocationObject): Promise<number> {

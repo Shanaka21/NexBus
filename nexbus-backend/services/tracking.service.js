@@ -27,15 +27,17 @@ async function processFix(user, fix) {
   }
 
   const now = Date.now();
-  const route = await routeService.getRoute(trip.route_id);
-  const stops = await stopService.routeStops(route);
+  // The vehicle row and the route/stops are independent reads, so run them together to keep each fix fast
+  const [vehicleRes, { route, stops }] = await Promise.all([
+    pool.query('SELECT * FROM vehicles WHERE id = $1', [trip.vehicle_id]),
+    routeService.getRoute(trip.route_id).then(async (r) => ({ route: r, stops: await stopService.routeStops(r) }))
+  ]);
 
   const recentFixes = [...(trip.recent_fixes || []), { t: now, speed: speedKmh }]
     .filter(f => now - f.t <= 5 * 60 * 1000)
     .slice(-10);
   const delay = eta.delayMinutes(route, stops, trip, { lat, lng }, eta.recentSpeedKmh(recentFixes, now), now);
 
-  const vehicleRes = await pool.query('SELECT * FROM vehicles WHERE id = $1', [trip.vehicle_id]);
   const vehicle = vehicleRes.rows[0] || {};
   // an emergency flag raised by the operator is never overwritten by the tracker
   const vehicleStatus = vehicle.status === 'emergency' ? 'emergency' : (delay >= DELAY_ALERT_MIN ? 'delayed' : 'active');

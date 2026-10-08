@@ -3,7 +3,7 @@
 // Kept close to the driver's GPS interval so the live map does not lag far behind the bus.
 const store = new Map();
 
-const TTL_MS = Number(process.env.LIVE_CACHE_TTL_MS || 5000);
+const TTL_MS = Number(process.env.LIVE_CACHE_TTL_MS || 1000);
 
 async function cached(key, fn, ttlMs = TTL_MS) {
   const hit = store.get(key);
