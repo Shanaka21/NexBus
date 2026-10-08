@@ -84,8 +84,12 @@ export default function LoginScreen() {
 
   useEffect(() => {
     if (response?.type === "success") {
-      const idToken = response.authentication?.idToken;
-      if (!idToken) return;
+      // Web returns the id_token directly in params; native exchanges a code and returns it in authentication
+      const idToken = response.params?.id_token || response.authentication?.idToken;
+      if (!idToken) {
+        Alert.alert("Error", "Google did not return a sign-in token. Please try again.");
+        return;
+      }
       setGoogleLoading(true);
       // The backend verifies the Google ID token itself and issues the same token pair as a password login
       fetch(`${API_URL}/auth/google`, {
@@ -96,16 +100,20 @@ export default function LoginScreen() {
         .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
         .then(async ({ ok, data }) => {
           if (!ok || !data.uid) throw new Error(data?.error || "Google sign-in failed");
+          if (data.role === "operator" || data.role === "admin") {
+            Alert.alert("Use the web dashboard", "Operator and administrator accounts are managed in the NexBus web dashboard.");
+            return;
+          }
           setUserSession(data.uid, data.name || "User", data.email || "", {
             role: data.role, operatorId: data.operator_id, idToken: data.idToken, refreshToken: data.refreshToken,
           });
           registerForPush();
           await saveSession();
-          router.replace("/home");
+          router.replace((data.role === "driver" ? "/driver" : "/home") as any);
         })
-        .catch(() => {
+        .catch((e) => {
           clearSession();
-          Alert.alert("Error", "Google Sign-In could not be completed. Please sign in with your email.");
+          Alert.alert("Error", e?.message || "Google Sign-In could not be completed. Please sign in with your email.");
         })
         .finally(() => setGoogleLoading(false));
     } else if (response?.type === "error") {
