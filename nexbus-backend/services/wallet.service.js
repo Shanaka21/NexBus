@@ -42,6 +42,31 @@ async function saveCard(tx, userId, n, paymentId) {
   return { brand, last4 };
 }
 
+const MAX_CARDS = 5;
+
+// Adds a card the passenger typed in. Only brand, last 4, holder and expiry reach the server; the card is
+// not charged or verified here, the payment itself always happens on PayHere's page.
+async function addCard(user, card) {
+  const [mm, yy] = card.expiry.split('/').map(Number);
+  const now = new Date();
+  if (2000 + yy < now.getFullYear() || (2000 + yy === now.getFullYear() && mm < now.getMonth() + 1)) {
+    throw new AppError(400, 'CARD_EXPIRED', 'This card has expired');
+  }
+  const count = await pool.query('SELECT count(*)::int AS c FROM saved_cards WHERE user_id = $1', [user.uid]);
+  if (count.rows[0].c >= MAX_CARDS) {
+    throw new AppError(409, 'CARD_LIMIT', `You can save up to ${MAX_CARDS} cards. Remove one first`);
+  }
+  const t = Date.now();
+  await pool.query(
+    `INSERT INTO saved_cards (user_id, brand, last4, holder_name, expiry, source_payment_id, created_at, last_used_at)
+     VALUES ($1,$2,$3,$4,$5,NULL,$6,$6)
+     ON CONFLICT (user_id, brand, last4) DO UPDATE SET holder_name = EXCLUDED.holder_name, expiry = EXCLUDED.expiry`,
+    [user.uid, card.brand, card.last4, card.holder_name, card.expiry, t]
+  );
+  await audit.log({ userId: user.uid, action: 'CARD_ADDED', entity: 'saved_cards', details: { brand: card.brand, last4: card.last4 } });
+  return { message: 'Card added' };
+}
+
 async function removeCard(user, cardId) {
   const { rowCount } = await pool.query('DELETE FROM saved_cards WHERE id = $1 AND user_id = $2', [cardId, user.uid]);
   if (!rowCount) throw new AppError(404, 'CARD_NOT_FOUND', 'Card not found');
@@ -121,4 +146,4 @@ async function refundBooking(tx, userId, booking) {
   return amount;
 }
 
-module.exports = { credit, saveCard, removeCard, getWallet, payBooking, refundBooking, TOPUP_MIN_LKR, TOPUP_MAX_LKR };
+module.exports = { credit, saveCard, addCard, removeCard, getWallet, payBooking, refundBooking, TOPUP_MIN_LKR, TOPUP_MAX_LKR };

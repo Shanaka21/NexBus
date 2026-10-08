@@ -118,7 +118,14 @@ exports.booking = Joi.object({
 
 exports.checkout = Joi.object({ booking_id: id.required() });
 exports.walletTopup = Joi.object({ amount: Joi.number().integer().min(100).max(50000).required() });
-exports.walletPay = Joi.object({ booking_id: id.required() });
+// A card added by hand: the app sends only the brand and the last 4 digits, never the full number or the CVV
+exports.walletCard = Joi.object({
+  brand: Joi.string().valid('VISA', 'MASTER', 'AMEX').required(),
+  last4: Joi.string().pattern(/^\d{4}$/).required(),
+  holder_name: Joi.string().trim().min(2).max(60).required(),
+  expiry: Joi.string().pattern(/^(0[1-9]|1[0-2])\/\d{2}$/).required()
+});
+exports.walletPay =Joi.object({ booking_id: id.required() });
 exports.simulate = Joi.object({
   order_id: Joi.string().max(80).required(),
   status_code: Joi.string().valid('2', '0', '-1', '-2').default('2')

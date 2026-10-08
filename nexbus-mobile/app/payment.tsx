@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
-  View, Text, StyleSheet, TouchableOpacity, StatusBar, Alert, ActivityIndicator, ScrollView,
+  View, Text, StyleSheet, TouchableOpacity, StatusBar, ActivityIndicator, ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { apiJson, jsonBody } from "../lib/api";
+import { showAlert } from "../lib/dialog";
 import { startPayHere } from "../lib/payhere";
 
 type Booking = {
@@ -75,7 +76,7 @@ export default function PaymentScreen() {
     try {
       const checkout = await apiJson("/payments/checkout", { method: "POST", ...jsonBody({ booking_id: booking.id }) });
       if (!checkout.ok) {
-        Alert.alert("Cannot pay", checkout.data?.error || "Please try again.");
+        showAlert("Cannot pay", checkout.data?.error || "Please try again.");
         await load();
         return;
       }
@@ -85,7 +86,7 @@ export default function PaymentScreen() {
         // Expo Go and the web cannot open the PayHere SDK: use the sandbox simulator when the server allows it
         const sim = await apiJson("/payments/simulate", { method: "POST", ...jsonBody({ order_id: checkout.data.order_id }) });
         if (!sim.ok) {
-          Alert.alert(
+          showAlert(
             "PayHere not available here",
             "The PayHere checkout needs a development build of the app. Install it to pay, or ask the administrator to enable the sandbox simulator."
           );
@@ -94,13 +95,13 @@ export default function PaymentScreen() {
         result = "completed";
       }
 
-      if (result === "dismissed") { Alert.alert("Payment cancelled", "You can try again before the seat hold expires."); return; }
-      if (result === "error") { Alert.alert("Payment failed", "The payment could not be completed. You can try again."); return; }
+      if (result === "dismissed") { showAlert("Payment cancelled", "You can try again before the seat hold expires."); return; }
+      if (result === "error") { showAlert("Payment failed", "The payment could not be completed. You can try again."); return; }
 
       const confirmed = await waitForConfirmation();
-      if (!confirmed) Alert.alert("Processing", "We are waiting for the payment confirmation. Check My Bookings in a moment.");
+      if (!confirmed) showAlert("Processing", "We are waiting for the payment confirmation. Check My Bookings in a moment.");
     } catch {
-      Alert.alert("Error", "Could not connect to server.");
+      showAlert("Error", "Could not connect to server.");
     } finally {
       if (mounted.current) setBusy(false);
     }
@@ -117,16 +118,16 @@ export default function PaymentScreen() {
         return;
       }
       if (data?.code === "INSUFFICIENT_BALANCE") {
-        Alert.alert("Not enough balance", data?.error || "Your wallet balance is too low.", [
+        showAlert("Not enough balance", data?.error || "Your wallet balance is too low.", [
           { text: "Not now", style: "cancel" },
           { text: "Top up wallet", onPress: () => router.push("/wallet" as any) },
         ]);
       } else {
-        Alert.alert("Cannot pay", data?.error || "Please try again.");
+        showAlert("Cannot pay", data?.error || "Please try again.");
         await load();
       }
     } catch {
-      Alert.alert("Error", "Could not connect to server.");
+      showAlert("Error", "Could not connect to server.");
     } finally {
       if (mounted.current) setBusy(false);
     }
@@ -134,14 +135,14 @@ export default function PaymentScreen() {
 
   const handleCancel = () => {
     if (!booking) return;
-    Alert.alert("Cancel booking", "Release the held seats?", [
+    showAlert("Cancel booking", "Release the held seats?", [
       { text: "No", style: "cancel" },
       {
         text: "Yes, cancel", style: "destructive",
         onPress: async () => {
           const { ok, data } = await apiJson(`/bookings/${booking.id}/cancel`, { method: "PATCH" });
           if (ok) router.replace("/bookings");
-          else Alert.alert("Error", data?.error || "Could not cancel.");
+          else showAlert("Error", data?.error || "Could not cancel.");
         },
       },
     ]);

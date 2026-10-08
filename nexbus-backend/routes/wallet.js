@@ -23,6 +23,10 @@ router.post('/topup', strict, validate(schemas.walletTopup), async (req, res) =>
   res.json(paymentObject);
 });
 
+router.post('/cards', strict, validate(schemas.walletCard), async (req, res) => {
+  res.status(201).json(await wallet.addCard(req.user, req.valid.body));
+});
+
 router.delete('/cards/:id', strict, async (req, res) => {
   const cardId = Number(req.params.id);
   if (!Number.isSafeInteger(cardId) || cardId < 1) throw new AppError(400, 'VALIDATION_ERROR', 'Invalid card id');

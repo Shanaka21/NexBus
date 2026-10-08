@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
-  View, Text, StyleSheet, TouchableOpacity, StatusBar, Alert, ActivityIndicator, ScrollView, TextInput,
+  View, Text, StyleSheet, TouchableOpacity, StatusBar, ActivityIndicator, ScrollView, TextInput,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { apiJson, jsonBody } from "../lib/api";
+import { showAlert } from "../lib/dialog";
 import { startPayHere } from "../lib/payhere";
+import { detectBrand, luhnValid, formatCardNumber, formatExpiry, expiryValid, digitsOnly } from "../lib/cards";
 
 type Tx = { id: string; type: "topup" | "booking_payment" | "refund"; amount: number; balance_after: number; note: string | null; created_at: number };
 type Card = { id: string; brand: string; last4: string; holder_name: string | null; expiry: string | null };
@@ -25,6 +27,11 @@ export default function WalletScreen() {
   const [loading, setLoading] = useState(true);
   const [amount, setAmount] = useState("1000");
   const [busy, setBusy] = useState(false);
+  const [showCardForm, setShowCardForm] = useState(false);
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardExpiry, setCardExpiry] = useState("");
+  const [cardHolder, setCardHolder] = useState("");
+  const [savingCard, setSavingCard] = useState(false);
   const mounted = useRef(true);
 
   const load = useCallback(async () => {
@@ -53,17 +60,42 @@ export default function WalletScreen() {
   };
 
   const handleRemoveCard = (card: Card) => {
-    Alert.alert("Remove card", `Remove ${brandName(card.brand)} •••• ${card.last4} from your saved cards?`, [
+    showAlert("Remove card", `Remove ${brandName(card.brand)} •••• ${card.last4} from your saved cards?`, [
       { text: "Cancel", style: "cancel" },
       {
         text: "Remove", style: "destructive",
         onPress: async () => {
           const { ok, data } = await apiJson(`/wallet/cards/${card.id}`, { method: "DELETE" });
           if (ok) await load();
-          else Alert.alert("Error", data?.error || "Could not remove the card.");
+          else showAlert("Error", data?.error || "Could not remove the card.");
         },
       },
     ]);
+  };
+
+  // The full number is checked on the device and then discarded: only the brand and the last 4 digits are sent to NexBus
+  const handleAddCard = async () => {
+    const cardBrand = detectBrand(cardNumber);
+    if (!cardBrand) { showAlert("Unsupported card", "NexBus accepts Visa, Mastercard and American Express cards."); return; }
+    if (!luhnValid(cardNumber)) { showAlert("Invalid card number", "Please check the card number and try again."); return; }
+    if (!expiryValid(cardExpiry)) { showAlert("Invalid expiry date", "Enter the expiry as MM/YY. The card must not be expired."); return; }
+    if (cardHolder.trim().length < 2) { showAlert("Name required", "Enter the name printed on the card."); return; }
+
+    setSavingCard(true);
+    try {
+      const { ok, data } = await apiJson("/wallet/cards", {
+        method: "POST",
+        ...jsonBody({ brand: cardBrand, last4: digitsOnly(cardNumber).slice(-4), holder_name: cardHolder.trim(), expiry: cardExpiry }),
+      });
+      if (!ok) { showAlert("Could not add card", data?.error || "Please try again."); return; }
+      setCardNumber(""); setCardExpiry(""); setCardHolder("");
+      setShowCardForm(false);
+      await load();
+    } catch {
+      showAlert("Error", "Could not connect to server.");
+    } finally {
+      if (mounted.current) setSavingCard(false);
+    }
   };
 
   const handleTopup = async () => {
@@ -71,7 +103,7 @@ export default function WalletScreen() {
     const min = wallet?.min_topup ?? 100;
     const max = wallet?.max_topup ?? 50000;
     if (!Number.isInteger(value) || value < min || value > max) {
-      Alert.alert("Invalid amount", `Enter a whole amount between LKR ${min} and LKR ${max}.`);
+      showAlert("Invalid amount", `Enter a whole amount between LKR ${min} and LKR ${max}.`);
       return;
     }
     setBusy(true);
@@ -79,7 +111,7 @@ export default function WalletScreen() {
       const before = wallet?.balance ?? 0;
       const checkout = await apiJson("/wallet/topup", { method: "POST", ...jsonBody({ amount: value }) });
       if (!checkout.ok) {
-        Alert.alert("Cannot top up", checkout.data?.error || "Please try again.");
+        showAlert("Cannot top up", checkout.data?.error || "Please try again.");
         return;
       }
 
@@ -88,7 +120,7 @@ export default function WalletScreen() {
         // Expo Go and the web cannot open the PayHere SDK: use the sandbox simulator when the server allows it
         const sim = await apiJson("/payments/simulate", { method: "POST", ...jsonBody({ order_id: checkout.data.order_id }) });
         if (!sim.ok) {
-          Alert.alert(
+          showAlert(
             "PayHere not available here",
             "The PayHere checkout needs a development build of the app. Install it to top up, or ask the administrator to enable the sandbox simulator."
           );
@@ -97,28 +129,30 @@ export default function WalletScreen() {
         result = "completed";
       }
 
-      if (result === "dismissed") { Alert.alert("Top-up cancelled", "No money was added to your wallet."); return; }
-      if (result === "error") { Alert.alert("Top-up failed", "The payment could not be completed. No money was added."); return; }
+      if (result === "dismissed") { showAlert("Top-up cancelled", "No money was added to your wallet."); return; }
+      if (result === "error") { showAlert("Top-up failed", "The payment could not be completed. No money was added."); return; }
 
       const credited = await waitForBalance(before);
       if (credited) {
         const after = await load();
         const added = after && after.cards.length > (wallet?.cards.length ?? 0);
-        Alert.alert(
+        showAlert(
           "Wallet topped up",
           `${money(value)} was added to your wallet.${added ? " Your card was saved for next time." : ""}`
         );
       }
-      else if (!credited) Alert.alert("Processing", "We are waiting for the payment confirmation. Your balance will update in a moment.");
+      else if (!credited) showAlert("Processing", "We are waiting for the payment confirmation. Your balance will update in a moment.");
     } catch {
-      Alert.alert("Error", "Could not connect to server.");
+      showAlert("Error", "Could not connect to server.");
     } finally {
       if (mounted.current) setBusy(false);
     }
   };
 
-  // A passenger with no saved card and no top-up yet is taken through the add-card step first
-  const firstTime = !!wallet && wallet.cards.length === 0 && !wallet.transactions.some((t) => t.type === "topup");
+  // A passenger with no card must add one before topping up
+  const noCard = !!wallet && wallet.cards.length === 0;
+  const cardFormOpen = noCard || showCardForm;
+  const brand = detectBrand(cardNumber);
 
   return (
     <View style={styles.container}>
@@ -143,18 +177,25 @@ export default function WalletScreen() {
             <Text style={styles.balance}>{money(wallet.balance)}</Text>
           </View>
 
-          {firstTime ? (
+          {noCard && (
             <View style={styles.welcomeCard}>
               <Ionicons name="card-outline" size={30} color="#1a3cff" />
               <Text style={styles.welcomeTitle}>Add a card to start</Text>
               <Text style={styles.welcomeText}>
-                Your first top-up adds your card. Choose an amount, then enter your card on PayHere's secure page.
-                NexBus never sees your full card number, only the last 4 digits are kept so you can recognise the card later.
+                Add the card you will use to top up your wallet. Only the card type and the last 4 digits are kept, and the
+                card is charged securely on PayHere's page, where you enter your CVV.
               </Text>
             </View>
-          ) : (
+          )}
+
+          {!noCard && (
             <>
-              <Text style={styles.sectionTitle}>Saved cards</Text>
+              <View style={styles.sectionRow}>
+                <Text style={styles.sectionTitleInline}>Saved cards</Text>
+                <TouchableOpacity onPress={() => setShowCardForm((v) => !v)}>
+                  <Text style={styles.linkText}>{showCardForm ? "Cancel" : "+ Add card"}</Text>
+                </TouchableOpacity>
+              </View>
               <View style={styles.card}>
                 {wallet.cards.map((c, i) => (
                   <View key={c.id} style={[styles.txRow, i > 0 && styles.txBorder]}>
@@ -172,7 +213,64 @@ export default function WalletScreen() {
             </>
           )}
 
-          <Text style={styles.sectionTitle}>{firstTime ? "First top-up" : "Top up"}</Text>
+          {cardFormOpen && (
+            <View style={[styles.card, { marginTop: 14 }]}>
+              <Text style={styles.inputLabel}>Card number</Text>
+              <View style={styles.cardInputRow}>
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  value={cardNumber}
+                  onChangeText={(t) => setCardNumber(formatCardNumber(t))}
+                  keyboardType="number-pad"
+                  placeholder="1234 5678 9012 3456"
+                  placeholderTextColor="#aaa"
+                  maxLength={19}
+                  autoComplete="off"
+                />
+                {brand && <Text style={styles.brandTag}>{brandName(brand)}</Text>}
+              </View>
+
+              <Text style={[styles.inputLabel, { marginTop: 14 }]}>Expiry (MM/YY)</Text>
+              <TextInput
+                style={styles.input}
+                value={cardExpiry}
+                onChangeText={(t) => setCardExpiry(formatExpiry(t))}
+                keyboardType="number-pad"
+                placeholder="MM/YY"
+                placeholderTextColor="#aaa"
+                maxLength={5}
+              />
+
+              <Text style={[styles.inputLabel, { marginTop: 14 }]}>Name on card</Text>
+              <TextInput
+                style={styles.input}
+                value={cardHolder}
+                onChangeText={setCardHolder}
+                autoCapitalize="characters"
+                placeholder="NAME AS ON CARD"
+                placeholderTextColor="#aaa"
+                maxLength={60}
+              />
+
+              <TouchableOpacity onPress={handleAddCard} disabled={savingCard} style={{ marginTop: 18 }}>
+                <LinearGradient
+                  colors={["#4f86f7", "#1a3cff", "#0d1b6e"]}
+                  style={[styles.payButton, savingCard && { opacity: 0.5 }]}
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                >
+                  {savingCard ? <ActivityIndicator color="#fff" /> : <Ionicons name="add-circle-outline" size={20} color="#fff" />}
+                  <Text style={styles.payText}>{savingCard ? "Saving…" : "Add card"}</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+              <Text style={styles.note}>
+                We never ask for or store your CVV, and the full card number stays on this device.
+              </Text>
+            </View>
+          )}
+
+          {!noCard && (
+          <>
+          <Text style={styles.sectionTitle}>Top up</Text>
           <View style={styles.card}>
             <View style={styles.quickRow}>
               {QUICK_AMOUNTS.map((a) => (
@@ -204,11 +302,13 @@ export default function WalletScreen() {
                 start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
               >
                 {busy ? <ActivityIndicator color="#fff" /> : <Ionicons name="card-outline" size={20} color="#fff" />}
-                <Text style={styles.payText}>{busy ? "Processing…" : firstTime ? "Add card & top up" : "Top up with PayHere"}</Text>
+                <Text style={styles.payText}>{busy ? "Processing…" : "Top up with PayHere"}</Text>
               </LinearGradient>
             </TouchableOpacity>
             <Text style={styles.note}>You pay on PayHere's secure page. NexBus never sees your card details.</Text>
           </View>
+          </>
+          )}
 
           <Text style={styles.sectionTitle}>Transactions</Text>
           {wallet.transactions.length === 0 ? (
@@ -263,6 +363,11 @@ const styles = StyleSheet.create({
   welcomeCard: { backgroundColor: "#eef1ff", borderRadius: 14, padding: 16, marginTop: 18, alignItems: "center", gap: 6 },
   welcomeTitle: { fontSize: 16, fontWeight: "bold", color: "#1a1a4e" },
   welcomeText: { fontSize: 13, color: "#555", textAlign: "center", lineHeight: 19 },
+  sectionRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 18, marginBottom: 10 },
+  sectionTitleInline: { fontSize: 16, fontWeight: "bold", color: "#1a1a4e" },
+  linkText: { fontSize: 14, fontWeight: "600", color: "#1a3cff" },
+  cardInputRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  brandTag: { fontSize: 13, fontWeight: "700", color: "#1a3cff" },
   empty: { textAlign: "center", color: "#888", marginTop: 20 },
   txRow: { flexDirection: "row", alignItems: "center", paddingVertical: 12, gap: 10 },
   txBorder: { borderTopWidth: 1, borderTopColor: "#eee" },

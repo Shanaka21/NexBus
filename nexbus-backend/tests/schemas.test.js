@@ -89,3 +89,12 @@ describe('PayHere notification card fields', () => {
   test('notification without card details is still accepted', () => ok(s.payhereNotify, base));
   test('oversized card number field is rejected', () => bad(s.payhereNotify, { ...base, card_no: '4'.repeat(40) }));
 });
+
+describe('manually added card', () => {
+  const card = { brand: 'VISA', last4: '4242', holder_name: 'A PERSON', expiry: '12/30' };
+  test('valid card', () => ok(s.walletCard, card));
+  test('unknown brand is rejected', () => bad(s.walletCard, { ...card, brand: 'DISCOVER' }));
+  test('a full card number in last4 is rejected', () => bad(s.walletCard, { ...card, last4: '4242424242424242' }));
+  test('month 13 is rejected', () => bad(s.walletCard, { ...card, expiry: '13/30' }));
+  test('missing holder is rejected', () => bad(s.walletCard, { ...card, holder_name: '' }));
+});
