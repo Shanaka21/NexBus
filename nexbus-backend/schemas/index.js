@@ -133,7 +133,11 @@ exports.payhereNotify = Joi.object({
   payhere_currency: Joi.string().max(5).required(),
   status_code: Joi.string().pattern(/^-?\d$/).required(),
   md5sig: Joi.string().required(),
-  method: Joi.string().max(20).allow('')
+  method: Joi.string().max(20).allow(''),
+  // Present for card payments; the number is already masked by PayHere (e.g. ************4242)
+  card_holder_name: Joi.string().max(80).allow(''),
+  card_no: Joi.string().max(30).allow(''),
+  card_expiry: Joi.string().max(8).allow('')
 });
 
 exports.recommendations = Joi.object({

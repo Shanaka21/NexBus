@@ -187,6 +187,7 @@ async function settleTopup(tx, p, n) {
   let balance = null;
   if (status === 'success') {
     balance = await wallet.credit(tx, p.user_id, Number(p.amount_lkr), 'topup', p.id, 'Wallet top-up');
+    await wallet.saveCard(tx, p.user_id, n, p.id);
   }
   return { topup: true, status, userId: p.user_id, amount: Number(p.amount_lkr), balance, orderId: p.id };
 }
@@ -240,6 +241,13 @@ async function simulate(user, orderId, statusCode = '2') {
     payhere_amount: Number(p.amount_lkr).toFixed(2), payhere_currency: p.currency,
     status_code: String(statusCode), method: 'VISA'
   };
+  if (p.purpose === 'wallet_topup') {
+    // PayHere's sandbox card; lets the add-card flow be demonstrated without a real card
+    const holderRes = await pool.query('SELECT full_name FROM users WHERE id = $1', [user.uid]);
+    n.card_holder_name = holderRes.rows[0]?.full_name || 'NexBus Passenger';
+    n.card_no = '************4242';
+    n.card_expiry = '12/30';
+  }
   n.md5sig = expectedSignature(n, secret);
   return handleNotify(n);
 }

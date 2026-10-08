@@ -25,16 +25,45 @@ async function credit(tx, userId, amount, type, reference, note) {
   return Number(balance);
 }
 
+// Remembers the card used for a successful top-up from the masked details PayHere reports. Only the brand and the
+// last 4 digits are taken from the number, so a full card number can never be stored even if one were sent.
+async function saveCard(tx, userId, n, paymentId) {
+  const last4 = (String(n.card_no || '').match(/(\d{4})\D*$/) || [])[1];
+  if (!last4) return null;
+  const brand = String(n.method || 'CARD').toUpperCase().slice(0, 20);
+  const expiry = /^(\d{2})\/?(\d{2})$/.exec(String(n.card_expiry || ''));
+  const now = Date.now();
+  await tx.query(
+    `INSERT INTO saved_cards (user_id, brand, last4, holder_name, expiry, source_payment_id, created_at, last_used_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$7)
+     ON CONFLICT (user_id, brand, last4) DO UPDATE SET holder_name = EXCLUDED.holder_name, expiry = EXCLUDED.expiry, last_used_at = EXCLUDED.last_used_at`,
+    [userId, brand, last4, n.card_holder_name || null, expiry ? `${expiry[1]}/${expiry[2]}` : null, paymentId, now]
+  );
+  return { brand, last4 };
+}
+
+async function removeCard(user, cardId) {
+  const { rowCount } = await pool.query('DELETE FROM saved_cards WHERE id = $1 AND user_id = $2', [cardId, user.uid]);
+  if (!rowCount) throw new AppError(404, 'CARD_NOT_FOUND', 'Card not found');
+  await audit.log({ userId: user.uid, action: 'CARD_REMOVED', entity: 'saved_cards', entityId: String(cardId) });
+  return { message: 'Card removed' };
+}
+
 async function getWallet(user) {
-  const [balanceRes, txRes] = await Promise.all([
+  const [balanceRes, txRes, cardRes] = await Promise.all([
     pool.query('SELECT wallet_balance_lkr FROM users WHERE id = $1', [user.uid]),
     pool.query(
       `SELECT id, type, amount_lkr, balance_after, reference, note, created_at
        FROM wallet_transactions WHERE user_id = $1 ORDER BY created_at DESC, id DESC LIMIT 50`,
       [user.uid]
+    ),
+    pool.query(
+      'SELECT id, brand, last4, holder_name, expiry FROM saved_cards WHERE user_id = $1 ORDER BY last_used_at DESC',
+      [user.uid]
     )
   ]);
   return {
+    cards: cardRes.rows.map((c) => ({ id: String(c.id), brand: c.brand, last4: c.last4, holder_name: c.holder_name, expiry: c.expiry })),
     balance: Number(balanceRes.rows[0]?.wallet_balance_lkr || 0),
     currency: 'LKR',
     min_topup: TOPUP_MIN_LKR,
@@ -92,4 +121,4 @@ async function refundBooking(tx, userId, booking) {
   return amount;
 }
 
-module.exports = { credit, getWallet, payBooking, refundBooking, TOPUP_MIN_LKR, TOPUP_MAX_LKR };
+module.exports = { credit, saveCard, removeCard, getWallet, payBooking, refundBooking, TOPUP_MIN_LKR, TOPUP_MAX_LKR };

@@ -82,3 +82,10 @@ describe('wallet requests', () => {
   test('valid wallet payment', () => ok(s.walletPay, { booking_id: 'b1' }));
   test('path-like booking id is rejected', () => bad(s.walletPay, { booking_id: '../../users' }));
 });
+
+describe('PayHere notification card fields', () => {
+  const base = { merchant_id: 'm', order_id: 'TOPUP-1', payhere_amount: '1000.00', payhere_currency: 'LKR', status_code: '2', md5sig: 'x' };
+  test('masked card details are accepted', () => ok(s.payhereNotify, { ...base, method: 'VISA', card_holder_name: 'A B', card_no: '************4242', card_expiry: '12/30' }));
+  test('notification without card details is still accepted', () => ok(s.payhereNotify, base));
+  test('oversized card number field is rejected', () => bad(s.payhereNotify, { ...base, card_no: '4'.repeat(40) }));
+});

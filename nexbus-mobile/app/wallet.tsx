@@ -9,11 +9,14 @@ import { apiJson, jsonBody } from "../lib/api";
 import { startPayHere } from "../lib/payhere";
 
 type Tx = { id: string; type: "topup" | "booking_payment" | "refund"; amount: number; balance_after: number; note: string | null; created_at: number };
-type Wallet = { balance: number; min_topup: number; max_topup: number; transactions: Tx[] };
+type Card = { id: string; brand: string; last4: string; holder_name: string | null; expiry: string | null };
+type Wallet = { balance: number; min_topup: number; max_topup: number; transactions: Tx[]; cards: Card[] };
 
 const QUICK_AMOUNTS = [500, 1000, 2000, 5000];
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const money = (n: number) => `LKR ${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const BRAND_LABEL: Record<string, string> = { VISA: "Visa", MASTER: "Mastercard", AMEX: "Amex" };
+const brandName = (b: string) => BRAND_LABEL[b] || b.charAt(0) + b.slice(1).toLowerCase();
 const TX_LABEL: Record<Tx["type"], string> = { topup: "Top-up", booking_payment: "Booking payment", refund: "Refund" };
 
 export default function WalletScreen() {
@@ -26,9 +29,11 @@ export default function WalletScreen() {
 
   const load = useCallback(async () => {
     const { ok, data } = await apiJson("/wallet");
-    if (mounted.current && ok) setWallet(data);
+    // an older backend may not return cards/transactions yet, so default them instead of crashing
+    const fresh: Wallet | null = ok && data ? { ...data, cards: data.cards ?? [], transactions: data.transactions ?? [] } : null;
+    if (mounted.current && fresh) setWallet(fresh);
     if (mounted.current) setLoading(false);
-    return ok ? (data as Wallet) : null;
+    return fresh;
   }, []);
 
   useEffect(() => {
@@ -45,6 +50,20 @@ export default function WalletScreen() {
       await wait(1500);
     }
     return false;
+  };
+
+  const handleRemoveCard = (card: Card) => {
+    Alert.alert("Remove card", `Remove ${brandName(card.brand)} •••• ${card.last4} from your saved cards?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Remove", style: "destructive",
+        onPress: async () => {
+          const { ok, data } = await apiJson(`/wallet/cards/${card.id}`, { method: "DELETE" });
+          if (ok) await load();
+          else Alert.alert("Error", data?.error || "Could not remove the card.");
+        },
+      },
+    ]);
   };
 
   const handleTopup = async () => {
@@ -82,14 +101,24 @@ export default function WalletScreen() {
       if (result === "error") { Alert.alert("Top-up failed", "The payment could not be completed. No money was added."); return; }
 
       const credited = await waitForBalance(before);
-      if (credited) Alert.alert("Wallet topped up", `${money(value)} was added to your wallet.`);
-      else Alert.alert("Processing", "We are waiting for the payment confirmation. Your balance will update in a moment.");
+      if (credited) {
+        const after = await load();
+        const added = after && after.cards.length > (wallet?.cards.length ?? 0);
+        Alert.alert(
+          "Wallet topped up",
+          `${money(value)} was added to your wallet.${added ? " Your card was saved for next time." : ""}`
+        );
+      }
+      else if (!credited) Alert.alert("Processing", "We are waiting for the payment confirmation. Your balance will update in a moment.");
     } catch {
       Alert.alert("Error", "Could not connect to server.");
     } finally {
       if (mounted.current) setBusy(false);
     }
   };
+
+  // A passenger with no saved card and no top-up yet is taken through the add-card step first
+  const firstTime = !!wallet && wallet.cards.length === 0 && !wallet.transactions.some((t) => t.type === "topup");
 
   return (
     <View style={styles.container}>
@@ -114,7 +143,36 @@ export default function WalletScreen() {
             <Text style={styles.balance}>{money(wallet.balance)}</Text>
           </View>
 
-          <Text style={styles.sectionTitle}>Top up</Text>
+          {firstTime ? (
+            <View style={styles.welcomeCard}>
+              <Ionicons name="card-outline" size={30} color="#1a3cff" />
+              <Text style={styles.welcomeTitle}>Add a card to start</Text>
+              <Text style={styles.welcomeText}>
+                Your first top-up adds your card. Choose an amount, then enter your card on PayHere's secure page.
+                NexBus never sees your full card number, only the last 4 digits are kept so you can recognise the card later.
+              </Text>
+            </View>
+          ) : (
+            <>
+              <Text style={styles.sectionTitle}>Saved cards</Text>
+              <View style={styles.card}>
+                {wallet.cards.map((c, i) => (
+                  <View key={c.id} style={[styles.txRow, i > 0 && styles.txBorder]}>
+                    <Ionicons name="card" size={26} color="#1a3cff" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.txTitle}>{brandName(c.brand)} •••• {c.last4}</Text>
+                      <Text style={styles.txSub}>{[c.holder_name, c.expiry && `Expires ${c.expiry}`].filter(Boolean).join(" · ")}</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => handleRemoveCard(c)} hitSlop={10}>
+                      <Ionicons name="trash-outline" size={20} color="#d32f2f" />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            </>
+          )}
+
+          <Text style={styles.sectionTitle}>{firstTime ? "First top-up" : "Top up"}</Text>
           <View style={styles.card}>
             <View style={styles.quickRow}>
               {QUICK_AMOUNTS.map((a) => (
@@ -146,7 +204,7 @@ export default function WalletScreen() {
                 start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
               >
                 {busy ? <ActivityIndicator color="#fff" /> : <Ionicons name="card-outline" size={20} color="#fff" />}
-                <Text style={styles.payText}>{busy ? "Processing…" : "Top up with PayHere"}</Text>
+                <Text style={styles.payText}>{busy ? "Processing…" : firstTime ? "Add card & top up" : "Top up with PayHere"}</Text>
               </LinearGradient>
             </TouchableOpacity>
             <Text style={styles.note}>You pay on PayHere's secure page. NexBus never sees your card details.</Text>
@@ -202,6 +260,9 @@ const styles = StyleSheet.create({
   payButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", borderRadius: 14, paddingVertical: 16, gap: 10 },
   payText: { color: "#fff", fontSize: 17, fontWeight: "bold" },
   note: { fontSize: 12, color: "#888", textAlign: "center", marginTop: 10 },
+  welcomeCard: { backgroundColor: "#eef1ff", borderRadius: 14, padding: 16, marginTop: 18, alignItems: "center", gap: 6 },
+  welcomeTitle: { fontSize: 16, fontWeight: "bold", color: "#1a1a4e" },
+  welcomeText: { fontSize: 13, color: "#555", textAlign: "center", lineHeight: 19 },
   empty: { textAlign: "center", color: "#888", marginTop: 20 },
   txRow: { flexDirection: "row", alignItems: "center", paddingVertical: 12, gap: 10 },
   txBorder: { borderTopWidth: 1, borderTopColor: "#eee" },
