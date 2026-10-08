@@ -117,6 +117,8 @@ exports.booking = Joi.object({
 });
 
 exports.checkout = Joi.object({ booking_id: id.required() });
+exports.walletTopup = Joi.object({ amount: Joi.number().integer().min(100).max(50000).required() });
+exports.walletPay = Joi.object({ booking_id: id.required() });
 exports.simulate = Joi.object({
   order_id: Joi.string().max(80).required(),
   status_code: Joi.string().valid('2', '0', '-1', '-2').default('2')

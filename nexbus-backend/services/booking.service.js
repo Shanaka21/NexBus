@@ -7,6 +7,7 @@ const eta = require('./eta.service');
 const stopService = require('./stop.service');
 const notify = require('./notify.service');
 const audit = require('./audit.service');
+const wallet = require('./wallet.service');
 
 const HOLD_MS = 10 * 60 * 1000;
 const BOOKING_CUTOFF_MS = 15 * 60 * 1000; // seats cannot be booked in the last 15 minutes before departure
@@ -181,21 +182,32 @@ async function cancelBooking(user, id) {
       }
     }
     const paid = b.payment_status === 'success';
+    // A booking paid from the wallet is refunded to the wallet right away; card payments still go through the operator
+    let walletRefund = 0;
+    if (paid) {
+      const walletPaid = await tx.query(
+        "SELECT 1 FROM payments WHERE booking_id = $1 AND method = 'WALLET' AND payment_status = 'success' LIMIT 1", [id]
+      );
+      if (walletPaid.rows.length) walletRefund = await wallet.refundBooking(tx, user.uid, b);
+    }
+    const needsOperatorRefund = paid && !walletRefund;
     await tx.query(
       'UPDATE bookings SET status = $1, cancelled_at = $2, refund_required = refund_required OR $3 WHERE id = $4',
-      ['cancelled', Date.now(), paid, id]
+      ['cancelled', Date.now(), needsOperatorRefund, id]
     );
-    return { refund: paid };
+    return { refund: needsOperatorRefund, walletRefund };
   });
 
   cache.invalidate('active-trips');
   await notify.sendToUser(user.uid, {
     type: 'booking_cancelled', title: 'Booking cancelled',
-    message: result.refund ? 'Your booking was cancelled. The operator will process your refund.' : 'Your booking was cancelled.',
+    message: result.walletRefund
+      ? `Your booking was cancelled. LKR ${result.walletRefund.toFixed(2)} was refunded to your wallet.`
+      : result.refund ? 'Your booking was cancelled. The operator will process your refund.' : 'Your booking was cancelled.',
     relatedBookingId: id
   });
   await audit.log({ userId: user.uid, action: 'BOOKING_CANCELLED', entity: 'bookings', entityId: id });
-  return { message: 'Booking cancelled', refund_required: result.refund };
+  return { message: 'Booking cancelled', refund_required: result.refund, wallet_refund: result.walletRefund };
 }
 
 // Serverless hosts (Vercel's free plan) cannot run a job every minute, so expired holds are also released

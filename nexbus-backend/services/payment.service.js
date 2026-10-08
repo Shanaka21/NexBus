@@ -4,6 +4,7 @@ const { AppError } = require('../utils/errors');
 const notify = require('./notify.service');
 const audit = require('./audit.service');
 const cache = require('./cache');
+const wallet = require('./wallet.service');
 
 const md5u = (s) => crypto.createHash('md5').update(s).digest('hex').toUpperCase();
 const STATUS = { '2': 'success', '0': 'pending', '-1': 'canceled', '-2': 'failed', '-3': 'chargedback' };
@@ -30,10 +31,10 @@ function validSignature(n, secret = cfg().secret) {
 
 // Builds the PayHere payment object. The amount always comes from the stored booking.
 async function createCheckout(user, bookingId) {
-  const { merchantId, sandbox, baseUrl } = cfg();
+  const { merchantId } = cfg();
   if (!merchantId) throw new AppError(500, 'PAYMENT_NOT_CONFIGURED', 'Online payment is not configured');
 
-  const bRes = await pool.query('SELECT * FROM bookings WHERE id = $1', [bookingId]);
+  const bRes =await pool.query('SELECT * FROM bookings WHERE id = $1', [bookingId]);
   const b = bRes.rows[0];
   if (!b || b.user_id !== user.uid) throw new AppError(404, 'BOOKING_NOT_FOUND', 'Booking not found');
   if (b.status !== 'pending_payment' || Number(b.hold_expires_at || 0) < Date.now()) {
@@ -54,6 +55,12 @@ async function createCheckout(user, bookingId) {
 
   await pool.query("UPDATE bookings SET payment_status = 'pending' WHERE id = $1", [bookingId]);
 
+  return payHereObject({ user, profile, orderId, items: `NexBus booking ${b.booking_reference}`, amount });
+}
+
+// The PayHere payment object. The amount is fixed by the server: the stored booking fare or the validated top-up.
+function payHereObject({ user, profile, orderId, items, amount }) {
+  const { merchantId, sandbox, baseUrl } = cfg();
   const fullName = profile.full_name || 'NexBus Passenger';
   const [firstName, ...rest] = fullName.split(' ');
   return {
@@ -61,7 +68,7 @@ async function createCheckout(user, bookingId) {
     merchant_id: merchantId,
     notify_url: `${baseUrl}/payments/notify`,
     order_id: orderId,
-    items: `NexBus booking ${b.booking_reference}`,
+    items,
     amount,
     currency: 'LKR',
     first_name: firstName,
@@ -72,6 +79,27 @@ async function createCheckout(user, bookingId) {
     city: 'Colombo',
     country: 'Sri Lanka'
   };
+}
+
+// Starts a wallet top-up: records a pending payment (no booking) and returns the PayHere object for it.
+async function createTopupCheckout(user, rawAmount) {
+  const { merchantId } = cfg();
+  if (!merchantId) throw new AppError(500, 'PAYMENT_NOT_CONFIGURED', 'Online payment is not configured');
+  const amountNum = Number(rawAmount);
+  if (!Number.isInteger(amountNum) || amountNum < wallet.TOPUP_MIN_LKR || amountNum > wallet.TOPUP_MAX_LKR) {
+    throw new AppError(400, 'INVALID_AMOUNT', `Top-up amount must be between LKR ${wallet.TOPUP_MIN_LKR} and LKR ${wallet.TOPUP_MAX_LKR}`);
+  }
+
+  const profileRes = await pool.query('SELECT * FROM users WHERE id = $1', [user.uid]);
+  const profile = profileRes.rows[0] || {};
+  const orderId = `TOPUP-${Date.now().toString(36)}-${crypto.randomBytes(3).toString('hex')}`.toUpperCase();
+
+  await pool.query(
+    `INSERT INTO payments (id, booking_id, user_id, operator_id, amount_lkr, currency, payment_status, created_at, purpose)
+     VALUES ($1,NULL,$2,NULL,$3,'LKR','pending',$4,'wallet_topup')`,
+    [orderId, user.uid, amountNum, Date.now()]
+  );
+  return payHereObject({ user, profile, orderId, items: 'NexBus wallet top-up', amount: amountNum.toFixed(2) });
 }
 
 // Applies a verified PayHere notification. Idempotent: a repeated notification changes nothing.
@@ -90,6 +118,7 @@ async function handleNotify(n) {
       throw new AppError(400, 'AMOUNT_MISMATCH', 'Payment amount does not match the booking');
     }
     if (p.payment_status === 'success') return { duplicate: true };
+    if (p.purpose === 'wallet_topup') return settleTopup(tx, p, n);
 
     const bookingRes = await tx.query('SELECT * FROM bookings WHERE id = $1 FOR UPDATE', [p.booking_id]);
     const b = bookingRes.rows[0];
@@ -139,9 +168,42 @@ async function handleNotify(n) {
   });
 
   if (outcome.duplicate) return outcome;
+  if (outcome.topup) {
+    await afterTopup(outcome);
+    return outcome;
+  }
   cache.invalidate('active-trips');
   await afterPayment(outcome);
   return outcome;
+}
+
+// Applies a PayHere notification for a wallet top-up: money is added to the balance only on success.
+async function settleTopup(tx, p, n) {
+  const status = STATUS[n.status_code] || 'failed';
+  await tx.query(
+    'UPDATE payments SET payment_status = $1, status_code = $2, gateway_payment_id = $3, method = $4, updated_at = $5 WHERE id = $6',
+    [status, Number(n.status_code), n.payment_id || null, n.method || null, Date.now(), p.id]
+  );
+  let balance = null;
+  if (status === 'success') {
+    balance = await wallet.credit(tx, p.user_id, Number(p.amount_lkr), 'topup', p.id, 'Wallet top-up');
+  }
+  return { topup: true, status, userId: p.user_id, amount: Number(p.amount_lkr), balance, orderId: p.id };
+}
+
+async function afterTopup(o) {
+  const messages = {
+    success: ['Wallet topped up', `LKR ${o.amount.toFixed(2)} was added to your wallet. New balance: LKR ${o.balance.toFixed(2)}.`],
+    failed: ['Top-up failed', 'Your wallet top-up payment failed. No money was added.'],
+    canceled: ['Top-up cancelled', 'Your wallet top-up was cancelled. No money was added.']
+  };
+  if (messages[o.status]) {
+    await notify.sendToUser(o.userId, {
+      type: o.status === 'success' ? 'wallet_topup' : 'payment_failed',
+      title: messages[o.status][0], message: messages[o.status][1]
+    });
+  }
+  await audit.log({ userId: o.userId, action: `WALLET_TOPUP_${o.status.toUpperCase()}`, entity: 'payments', entityId: o.orderId });
 }
 
 async function afterPayment(o) {
@@ -187,4 +249,4 @@ async function rejected(n, reason) {
     severity: 'security', details: { reason } });
 }
 
-module.exports = { createCheckout, handleNotify, simulate, rejected, validSignature, expectedSignature, md5u, STATUS };
+module.exports = { createCheckout, createTopupCheckout, handleNotify, simulate, rejected, validSignature, expectedSignature, md5u, STATUS };

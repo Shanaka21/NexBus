@@ -132,6 +132,7 @@ export default function HomeScreen() {
   const [unread, setUnread] = useState(0);
   const [quickRoutes, setQuickRoutes] = useState<QuickRoute[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
   const userName = getUserName() || "there";
   const [photoUrl, setPhotoUrl] = useState<string | null>(getUserPhoto());
 
@@ -204,6 +205,13 @@ export default function HomeScreen() {
   // the photo can be changed on the Profile screen, so pick it up again whenever Home comes back into view
   useFocusEffect(useCallback(() => { setPhotoUrl(getUserPhoto()); }, []));
 
+  // the balance changes on the Wallet and Payment screens, so refresh it whenever Home comes back into view
+  useFocusEffect(useCallback(() => {
+    apiJson("/wallet")
+      .then(({ ok, data }) => { if (ok && data) setWalletBalance(Number(data.balance)); })
+      .catch(() => {});
+  }, []));
+
   const onRefresh = async () => {
     setRefreshing(true);
     await Promise.all([loadAll(), findNearestStop()]);
@@ -256,6 +264,18 @@ export default function HomeScreen() {
           <Text style={styles.headerGreeting}>{greeting()}</Text>
           <Text style={[styles.headerTitle, { color: p.text }]} numberOfLines={1}>{userName}</Text>
         </View>
+        {walletBalance !== null && (
+          <TouchableOpacity
+            style={[styles.walletChip, { backgroundColor: p.card }]}
+            onPress={() => router.push("/wallet" as any)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="wallet-outline" size={18} color="#1a3cff" />
+            <Text style={[styles.walletChipText, { color: p.text }]}>
+              LKR {walletBalance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity
           style={[styles.bellWrapper, { backgroundColor: p.card }]}
           onPress={() => router.push("/notifications")}
@@ -680,6 +700,11 @@ const styles = StyleSheet.create({
   headerText: { flex: 1 },
   headerGreeting: { fontSize: 12, color: "#888", fontWeight: "500" },
   headerTitle: { fontSize: 19, fontWeight: "bold", marginTop: 1 },
+  walletChip: {
+    flexDirection: "row", alignItems: "center", gap: 6, height: 42, borderRadius: 21, paddingHorizontal: 12,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.07, shadowRadius: 4, elevation: 2,
+  },
+  walletChipText: { fontSize: 13, fontWeight: "700" },
   bellWrapper: {
     position: "relative", width: 42, height: 42, borderRadius: 21,
     alignItems: "center", justifyContent: "center",

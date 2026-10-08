@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, StatusBar, Alert, ActivityIndicator, ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { Stack, useRouter, useLocalSearchParams } from "expo-router";
+import { Stack, useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { apiJson, jsonBody } from "../lib/api";
 import { startPayHere } from "../lib/payhere";
@@ -22,7 +22,14 @@ export default function PaymentScreen() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(0);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
   const mounted = useRef(true);
+
+  // Reloaded whenever the screen regains focus so a top-up made on the wallet screen shows up here
+  const loadWallet = useCallback(async () => {
+    const { ok, data } = await apiJson("/wallet");
+    if (mounted.current && ok) setWalletBalance(Number(data.balance));
+  }, []);
 
   const load = useCallback(async () => {
     const { ok, data } = await apiJson(`/bookings/${id}`);
@@ -36,6 +43,12 @@ export default function PaymentScreen() {
     load().catch(() => setLoading(false));
     return () => { mounted.current = false; };
   }, [load]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadWallet().catch(() => {});
+    }, [loadWallet])
+  );
 
   // Countdown of the 10 minute seat hold
   useEffect(() => {
@@ -86,6 +99,32 @@ export default function PaymentScreen() {
 
       const confirmed = await waitForConfirmation();
       if (!confirmed) Alert.alert("Processing", "We are waiting for the payment confirmation. Check My Bookings in a moment.");
+    } catch {
+      Alert.alert("Error", "Could not connect to server.");
+    } finally {
+      if (mounted.current) setBusy(false);
+    }
+  };
+
+  const handleWalletPay = async () => {
+    if (!booking) return;
+    setBusy(true);
+    try {
+      const { ok, data } = await apiJson("/wallet/pay", { method: "POST", ...jsonBody({ booking_id: booking.id }) });
+      if (ok) {
+        setWalletBalance(Number(data.balance));
+        await load();
+        return;
+      }
+      if (data?.code === "INSUFFICIENT_BALANCE") {
+        Alert.alert("Not enough balance", data?.error || "Your wallet balance is too low.", [
+          { text: "Not now", style: "cancel" },
+          { text: "Top up wallet", onPress: () => router.push("/wallet" as any) },
+        ]);
+      } else {
+        Alert.alert("Cannot pay", data?.error || "Please try again.");
+        await load();
+      }
     } catch {
       Alert.alert("Error", "Could not connect to server.");
     } finally {
@@ -163,6 +202,16 @@ export default function PaymentScreen() {
 
           {booking.booking_status === "pending_payment" && (
             <>
+              <TouchableOpacity
+                style={[styles.walletButton, (busy || secondsLeft === 0) && { opacity: 0.5 }]}
+                onPress={handleWalletPay}
+                disabled={busy || secondsLeft === 0}
+              >
+                <Ionicons name="wallet-outline" size={20} color="#1a3cff" />
+                <Text style={styles.walletText}>
+                  Pay from wallet{walletBalance !== null ? ` (LKR ${walletBalance.toLocaleString("en-US", { minimumFractionDigits: 2 })})` : ""}
+                </Text>
+              </TouchableOpacity>
               <TouchableOpacity onPress={handlePay} disabled={busy || secondsLeft === 0}>
                 <LinearGradient
                   colors={["#4f86f7", "#1a3cff", "#0d1b6e"]}
@@ -223,6 +272,11 @@ const styles = StyleSheet.create({
   total: { fontSize: 17, fontWeight: "bold", color: "#1a3cff" },
   payButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", borderRadius: 14, paddingVertical: 16, gap: 10 },
   payText: { color: "#fff", fontSize: 17, fontWeight: "bold" },
+  walletButton: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", borderRadius: 14, paddingVertical: 15, gap: 10,
+    backgroundColor: "#fff", borderWidth: 1.5, borderColor: "#1a3cff", marginBottom: 12,
+  },
+  walletText: { color: "#1a3cff", fontSize: 16, fontWeight: "bold" },
   note: { fontSize: 12, color: "#888", textAlign: "center", marginTop: 10 },
   cancelLink: { alignItems: "center", marginTop: 16 },
   cancelText: { color: "#f44336", fontWeight: "600" },

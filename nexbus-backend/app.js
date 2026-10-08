@@ -32,6 +32,7 @@ api.use('/trips', require('./routes/trips'));
 api.use('/location', require('./routes/location'));
 api.use('/bookings', require('./routes/bookings'));
 api.use('/payments', require('./routes/payments'));
+api.use('/wallet', require('./routes/wallet'));
 api.use('/recommendations', require('./routes/recommendations'));
 api.use('/notifications', require('./routes/notifications'));
 api.use('/operator', require('./routes/operator'));

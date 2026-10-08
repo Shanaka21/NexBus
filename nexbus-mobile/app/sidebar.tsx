@@ -50,6 +50,7 @@ export default function SidebarScreen() {
     { icon: "time-outline",          label: "Trip History",  onPress: () => router.push("/bookings") },
     { icon: "star-outline",          label: "Favorites",     onPress: () => router.push("/routes") },
     { icon: "ticket-outline",        label: "My Bookings",   onPress: () => router.push("/bookings") },
+    { icon: "wallet-outline",        label: "My Wallet",     onPress: () => router.push("/wallet" as any) },
     { icon: "notifications-outline", label: "Notifications", onPress: () => router.push("/notifications" as any) },
     { icon: "settings-outline",      label: "Settings",      onPress: () => router.push("/settings" as any) },
     {
