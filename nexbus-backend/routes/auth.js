@@ -33,7 +33,9 @@ router.post('/google', strict, validate(schemas.google), async (req, res) => {
   try {
     const ticket = await googleClient.verifyIdToken({ idToken: req.valid.body.id_token, audience: clientIds });
     payload = ticket.getPayload();
-  } catch {
+  } catch (err) {
+    // The real reason (wrong audience, expired token, certificate fetch failure...) goes to the server log only
+    console.error('Google ID token verification failed:', err.message);
     throw new AppError(401, 'TOKEN_INVALID', 'Invalid Google sign-in token');
   }
   res.json(await authService.loginWithGoogle({ googleSub: payload.sub, email: payload.email, name: payload.name }));
