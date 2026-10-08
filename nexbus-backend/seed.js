@@ -50,6 +50,9 @@ const STOPS = [
   ['Kosgas Junction', 'Kosgas Junction', 'කොස්ගස් හංදිය', 6.9440, 79.8790],
   ['Armour Street', 'Armour Street', 'ආමර් වීදිය', 6.9418, 79.8649],
   ['nawathalwatta junction', 'Nawathalwatta Junction', 'නවතල්වත්ත හංදිය', 7.2888, 80.2049],
+  ['boyawalana', 'Boyawalana', 'බෝයවලාන', 7.3343, 80.1766],
+  ['paranagama', 'Paranagama', 'පරණගම', 7.3349, 80.1449],
+  ['maharagama junction', 'Maharagama Junction', 'මහරගම හංදිය', 7.3380, 80.1496],
   ['kiribathgoda', 'Kiribathgoda', 'කිරිබත්ගොඩ', 6.9782, 79.9270],
   ['balummahara', 'Balummahara', 'බලුම්මහර', 7.0450, 79.9980],
   ['pasyala', 'Pasyala', 'පස්යාල', 7.1684, 80.1242],
@@ -67,7 +70,7 @@ const DAYS_AHEAD = 3; // today and the next two days
 
 const ROUTES = [
   { id: 'r177', number: '177', type: 'normal', fare: 70, minutes: 60, headway: 10, stops: ['kaduwela', 'malabe', 'battaramulla', 'rajagiriya', 'borella', 'kollupitiya'] },
-  { id: 'r143', number: '143', type: 'normal', fare: 75, minutes: 75, headway: 5, stops: ['kaduwela', 'Welivita', 'Angoda', 'Wallampitiya', 'Orugodawatta', 'Kosgas Junction', 'Armour Street', 'Pettah'] },
+  { id: 'r143', number: '143', type: 'normal', fare: 75, minutes: 75, headway: 5, stops: ['kaduwela', 'Welivita', 'Angoda', 'Wallampitiya', 'Orugodawatta', 'Kosgas Junction', 'Armour Street', 'pettah'] },
   { id: 'r190', number: '190', type: 'normal', fare: 100, minutes: 100, headway: 15, stops: ['meegoda', 'athurugiriya', 'malabe', 'battaramulla', 'rajagiriya', 'borella', 'maradana', 'pettah'] },
   { id: 'r505', number: '505', type: 'normal', fare: 50, minutes: 40, headway: 20, stops: ['alawwa', 'nawathalwatta junction','boyawalana','paranagama','maharagama junction','giriulla'] },
   { id: 'r017', number: '17', type: 'semi_luxury', fare: 520, minutes: 260, headway: 30, stops: ['panadura', 'moratuwa', 'mount_lavinia', 'dehiwala', 'nugegoda', 'rajagiriya', 'battaramulla', 'malabe', 'kaduwela', 'weliweriya', 'yakkala', 'nittambuwa', 'warakapola', 'kegalle', 'peradeniya', 'kandy'] },
