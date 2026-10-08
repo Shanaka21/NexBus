@@ -90,6 +90,12 @@ async function createTopupCheckout(user, rawAmount) {
     throw new AppError(400, 'INVALID_AMOUNT', `Top-up amount must be between LKR ${wallet.TOPUP_MIN_LKR} and LKR ${wallet.TOPUP_MAX_LKR}`);
   }
 
+  // A top-up always goes through a card the passenger added themselves; none is ever added automatically
+  const cardRes = await pool.query('SELECT 1 FROM saved_cards WHERE user_id = $1 LIMIT 1', [user.uid]);
+  if (!cardRes.rows.length) {
+    throw new AppError(400, 'NO_CARD', 'Add a card before topping up your wallet');
+  }
+
   const profileRes = await pool.query('SELECT * FROM users WHERE id = $1', [user.uid]);
   const profile = profileRes.rows[0] || {};
   const orderId = `TOPUP-${Date.now().toString(36)}-${crypto.randomBytes(3).toString('hex')}`.toUpperCase();
@@ -187,7 +193,6 @@ async function settleTopup(tx, p, n) {
   let balance = null;
   if (status === 'success') {
     balance = await wallet.credit(tx, p.user_id, Number(p.amount_lkr), 'topup', p.id, 'Wallet top-up');
-    await wallet.saveCard(tx, p.user_id, n, p.id);
   }
   return { topup: true, status, userId: p.user_id, amount: Number(p.amount_lkr), balance, orderId: p.id };
 }
@@ -241,13 +246,6 @@ async function simulate(user, orderId, statusCode = '2') {
     payhere_amount: Number(p.amount_lkr).toFixed(2), payhere_currency: p.currency,
     status_code: String(statusCode), method: 'VISA'
   };
-  if (p.purpose === 'wallet_topup') {
-    // PayHere's sandbox card; lets the add-card flow be demonstrated without a real card
-    const holderRes = await pool.query('SELECT full_name FROM users WHERE id = $1', [user.uid]);
-    n.card_holder_name = holderRes.rows[0]?.full_name || 'NexBus Passenger';
-    n.card_no = '************4242';
-    n.card_expiry = '12/30';
-  }
   n.md5sig = expectedSignature(n, secret);
   return handleNotify(n);
 }

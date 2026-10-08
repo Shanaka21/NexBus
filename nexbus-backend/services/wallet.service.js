@@ -25,23 +25,6 @@ async function credit(tx, userId, amount, type, reference, note) {
   return Number(balance);
 }
 
-// Remembers the card used for a successful top-up from the masked details PayHere reports. Only the brand and the
-// last 4 digits are taken from the number, so a full card number can never be stored even if one were sent.
-async function saveCard(tx, userId, n, paymentId) {
-  const last4 = (String(n.card_no || '').match(/(\d{4})\D*$/) || [])[1];
-  if (!last4) return null;
-  const brand = String(n.method || 'CARD').toUpperCase().slice(0, 20);
-  const expiry = /^(\d{2})\/?(\d{2})$/.exec(String(n.card_expiry || ''));
-  const now = Date.now();
-  await tx.query(
-    `INSERT INTO saved_cards (user_id, brand, last4, holder_name, expiry, source_payment_id, created_at, last_used_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$7)
-     ON CONFLICT (user_id, brand, last4) DO UPDATE SET holder_name = EXCLUDED.holder_name, expiry = EXCLUDED.expiry, last_used_at = EXCLUDED.last_used_at`,
-    [userId, brand, last4, n.card_holder_name || null, expiry ? `${expiry[1]}/${expiry[2]}` : null, paymentId, now]
-  );
-  return { brand, last4 };
-}
-
 const MAX_CARDS = 5;
 
 // Adds a card the passenger typed in. Only brand, last 4, holder and expiry reach the server; the card is
@@ -146,4 +129,4 @@ async function refundBooking(tx, userId, booking) {
   return amount;
 }
 
-module.exports = { credit, saveCard, addCard, removeCard, getWallet, payBooking, refundBooking, TOPUP_MIN_LKR, TOPUP_MAX_LKR };
+module.exports = { credit, addCard, removeCard, getWallet, payBooking, refundBooking, TOPUP_MIN_LKR, TOPUP_MAX_LKR };

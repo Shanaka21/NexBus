@@ -99,6 +99,12 @@ export default function WalletScreen() {
   };
 
   const handleTopup = async () => {
+    // Money is only added through a card the passenger has added; no card is ever added automatically
+    if (!wallet || wallet.cards.length === 0) {
+      showAlert("Add a card first", "Add a card before you top up your wallet.");
+      setShowCardForm(true);
+      return;
+    }
     const value = Number(amount);
     const min = wallet?.min_topup ?? 100;
     const max = wallet?.max_topup ?? 50000;
@@ -112,6 +118,7 @@ export default function WalletScreen() {
       const checkout = await apiJson("/wallet/topup", { method: "POST", ...jsonBody({ amount: value }) });
       if (!checkout.ok) {
         showAlert("Cannot top up", checkout.data?.error || "Please try again.");
+        if (checkout.data?.code === "NO_CARD") { await load(); setShowCardForm(true); }
         return;
       }
 
@@ -133,15 +140,8 @@ export default function WalletScreen() {
       if (result === "error") { showAlert("Top-up failed", "The payment could not be completed. No money was added."); return; }
 
       const credited = await waitForBalance(before);
-      if (credited) {
-        const after = await load();
-        const added = after && after.cards.length > (wallet?.cards.length ?? 0);
-        showAlert(
-          "Wallet topped up",
-          `${money(value)} was added to your wallet.${added ? " Your card was saved for next time." : ""}`
-        );
-      }
-      else if (!credited) showAlert("Processing", "We are waiting for the payment confirmation. Your balance will update in a moment.");
+      if (credited) showAlert("Wallet topped up", `${money(value)} was added to your wallet.`);
+      else showAlert("Processing", "We are waiting for the payment confirmation. Your balance will update in a moment.");
     } catch {
       showAlert("Error", "Could not connect to server.");
     } finally {
