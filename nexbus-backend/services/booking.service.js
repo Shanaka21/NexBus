@@ -9,6 +9,7 @@ const notify = require('./notify.service');
 const audit = require('./audit.service');
 
 const HOLD_MS = 10 * 60 * 1000;
+const BOOKING_CUTOFF_MS = 15 * 60 * 1000; // seats cannot be booked in the last 15 minutes before departure
 
 // Response shape: keeps the field names older clients already read (route, from, to, seats, fare, status).
 // The boarding code is for the passenger who owns the booking only, so it is added on request.
@@ -67,8 +68,8 @@ async function createBooking(user, dto) {
     if (!['scheduled', 'running'].includes(trip.status)) {
       throw new AppError(409, 'TRIP_CLOSED', 'This trip is no longer open for booking');
     }
-    if (trip.status === 'scheduled' && Number(trip.scheduled_departure) < Date.now() - 10 * 60 * 1000) {
-      throw new AppError(409, 'TRIP_CLOSED', 'This trip has already departed');
+    if (Number(trip.scheduled_departure) - Date.now() < BOOKING_CUTOFF_MS) {
+      throw new AppError(409, 'TRIP_CLOSED', 'Booking for this trip has closed. Seats can be booked up to 15 minutes before departure');
     }
     const routeRes = await tx.query('SELECT * FROM routes WHERE id = $1', [trip.route_id]);
     const route = routeRes.rows[0];

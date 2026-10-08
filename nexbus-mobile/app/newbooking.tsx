@@ -65,9 +65,9 @@ export default function NewBookingScreen() {
     apiJson(`/trips?route_id=${selectedRoute.id}`)
       .then(({ ok, data }) => {
         if (!ok || !Array.isArray(data)) { setTrips([]); return; }
+        // booking closes 15 minutes before departure (the API enforces the same rule)
         const open = (data as Trip[]).filter(
-          (t) => t.reservable_seats > 0 &&
-            (t.status === "running" || t.scheduled_departure > Date.now() - 10 * 60 * 1000)
+          (t) => t.reservable_seats > 0 && t.scheduled_departure - Date.now() >= 15 * 60 * 1000
         );
         setTrips(open);
         const preset = params.trip_id ? open.find((t) => t.id === params.trip_id) : null;
@@ -185,7 +185,7 @@ export default function NewBookingScreen() {
             <Text style={styles.sectionTitle}>2. Select Trip</Text>
             {loadingTrips && <ActivityIndicator color="#1a3cff" style={{ marginVertical: 16 }} />}
             {!loadingTrips && trips.length === 0 && (
-              <Text style={styles.hint}>No trips with reservable seats are open on this route right now.</Text>
+              <Text style={styles.hint}>No trips are open for booking on this route right now. Booking closes 15 minutes before departure.</Text>
             )}
             {/* a frequent route has hundreds of departures: show the next few first */}
             {(showAllTrips ? trips : trips.slice(0, 12)).map((t) => {
